@@ -1,0 +1,5 @@
+# Installed into the skill's own .venv by scripts/setup.sh
+yt-dlp[default]          # downloads (kept on latest: sites change often)
+opencv-python-headless   # facecam / speaker detection
+pillow>=10.1             # caption rendering
+numpy
