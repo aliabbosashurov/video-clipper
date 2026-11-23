@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Runs vclip.py with the Python environment that setup.sh created in $VIDEO_CLIPPER_HOME (~/.video-clipper).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PY="${VIDEO_CLIPPER_HOME:-$HOME/.video-clipper}/venv/bin/python"
+if [[ ! -x "$PY" ]]; then
+  echo "Not set up yet. Run: bash \"$HERE/setup.sh\"" >&2
+  exit 1
+fi
+exec "$PY" "$HERE/vclip.py" "$@"

@@ -1,0 +1,14 @@
+{
+  "name": "aliabbosashurov",
+  "owner": { "name": "Aliabbos Ashurov", "url": "https://github.com/aliabbosashurov" },
+  "description": "Claude Code plugins by Aliabbos Ashurov.",
+  "plugins": [
+    {
+      "name": "video-clipper",
+      "source": "./",
+      "description": "Turn long videos into ready-to-post vertical clips with hook titles, word-by-word captions, and post captions + hashtags. macOS only.",
+      "category": "productivity",
+      "tags": ["video", "shorts", "podcast", "captions"]
+    }
+  ]
+}
