@@ -1,8 +1,42 @@
-# Video Clipper
+<div align="center">
 
-Turn long videos into ready-to-post vertical clips with one sentence in Claude Code.
+<img src="assets/banner-1.png" alt="Video-Clipper: vertical clips with hook titles and word-by-word captions" width="100%" />
 
-![macOS](https://img.shields.io/badge/platform-macOS-lightgrey) ![Claude Code skill](https://img.shields.io/badge/Claude%20Code-skill-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+# VIDEO-CLIPPER
+
+An intelligent video-clipping skill that automates discovery, highlight selection, editing and post preparation.
+
+**Open source** · Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp), [FFmpeg](https://ffmpeg.org) and [OpenCV](https://opencv.org)
+
+[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](docs/installation.md)
+[![Agent skill](https://img.shields.io/badge/agent-skill-orange)](SKILL.md)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/development.md)
+
+**[Installation](docs/installation.md)** · **[Usage](docs/usage.md)** · **[Commands](docs/commands.md)** · **[Troubleshooting](docs/troubleshooting.md)** · **[Development](docs/development.md)** · **[Issues](https://github.com/aliabbosashurov/video-clipper/issues)**
+
+</div>
+
+## Overview
+
+Video-Clipper is a skill for AI coding assistants and agentic tools. It gives your assistant a complete,
+repeatable workflow for turning a long video, as a link or a file, into short vertical clips for TikTok,
+YouTube Shorts and Instagram Reels: finding the video, understanding what's in it, choosing the best
+moments, cutting, reframing, captioning and writing the post.
+
+It isn't an AI model or a video editor. It orchestrates the assistant's own reasoning together with
+proven open-source tools, so one request replaces the whole manual edit.
+
+**What makes Video-Clipper different:**
+
+- **One request, the whole workflow.** Search, transcribe, pick, cut, reframe, caption and write the post
+  copy, with no hand-offs between tools.
+- **Downloads only what it needs.** Audio first for the transcript, then just the minutes each clip uses.
+  The full video is never downloaded.
+- **Runs on your machine.** Transcription, face detection and rendering happen locally, and you don't need
+  an API key: the picking happens inside your own assistant session.
+- **Ready to post.** Every clip comes with a hook title, word-by-word captions placed clear of the platform
+  buttons, a cover image, and a title, caption and hashtags.
 
 ```
 You:     clip this podcast https://www.youtube.com/watch?v=...
@@ -12,9 +46,6 @@ Claude:  Done. 3 clips from the 1 h 42 min episode:
            3. "The investor who said no to Uber"       (01:28:04, 52 s)
          Saved to ~/Video-Clips/.../clips
 ```
-
-Give it a podcast, interview, stream, tutorial or vlog, as a link or a file on your Mac. It finds the best
-moments and turns them into short clips for TikTok, YouTube Shorts and Instagram Reels.
 
 ## What you get
 
