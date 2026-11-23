@@ -11,14 +11,16 @@
                       post caption + hashtags
 
 Step 3 (picking) is done by the Claude Code session itself (no API keys); see SKILL.md.
-Run with the skill's venv:  .venv/bin/python scripts/vclip.py <command>
+Run through the wrapper, which uses the venv made by setup.sh:  scripts/vclip <command>
 """
 import argparse, concurrent.futures as cf, datetime as dt, hashlib, json, math, os, re, shutil
 import statistics, subprocess, sys, time, urllib.parse
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
-CFG = json.loads((SKILL / "config.json").read_text()) if (SKILL / "config.json").exists() else {}
+# venv, models and config live outside the skill folder, so they survive plugin updates
+DATA = Path(os.environ.get("VIDEO_CLIPPER_HOME") or Path.home() / ".video-clipper").expanduser()
+CFG = json.loads((DATA / "config.json").read_text()) if (DATA / "config.json").exists() else {}
 # every location can be moved with an env var; config.json is written by setup.sh
 RUNS = Path(os.environ.get("VIDEO_CLIPS_DIR") or CFG.get("clips_dir") or Path.home() / "Video-Clips").expanduser()
 YTDLP = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--quiet", "--no-progress"]
@@ -730,7 +732,7 @@ def main():
                    help="auto, facecam (cam box on top), cam (9:16 crop on the speaker), full (whole frame on blur)")
     r.add_argument("--cookies"); r.add_argument("--keep", action="store_true", help="keep downloaded source sections")
     a = p.parse_args()
-    if not (SKILL / ".ready").exists():
+    if not (DATA / ".ready").exists():
         sys.exit(f"Not set up yet. Run: bash \"{SKILL / 'scripts' / 'setup.sh'}\"")
     {"search": cmd_search, "prep": cmd_prep, "status": cmd_status, "render": cmd_render}[a.cmd](a)
 

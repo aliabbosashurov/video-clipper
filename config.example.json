@@ -1,7 +1,7 @@
 {
- "whisper_model": "/path/to/video-clipper/models/ggml-small.en.bin",
+ "whisper_model": "/Users/you/.video-clipper/models/ggml-small.en.bin",
  "whisper_model_multi": "",
- "yunet_model": "/path/to/video-clipper/models/face_detection_yunet_2023mar.onnx",
- "font": "/path/to/video-clipper/models/fonts/Anton-Regular.ttf",
+ "yunet_model": "/Users/you/.video-clipper/models/face_detection_yunet_2023mar.onnx",
+ "font": "/Users/you/.video-clipper/models/fonts/Anton-Regular.ttf",
  "clips_dir": "/Users/you/Video-Clips"
 }

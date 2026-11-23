@@ -6,14 +6,16 @@
 #   bash scripts/setup.sh --multilingual     also the multilingual model, for non-English videos
 #   bash scripts/setup.sh --model base.en    pick another model: tiny(.en) base(.en) small(.en) medium(.en) large-v3-turbo
 #
-# Locations (all optional):
-#   VIDEO_CLIPPER_MODELS  where models + the caption font go   (default: <skill>/models)
-#   VIDEO_CLIPS_DIR       where runs and clips are written       (default: ~/Video-Clips)
+# Locations (all optional). Kept outside the skill folder so plugin updates don't wipe them:
+#   VIDEO_CLIPPER_HOME    Python env, config.json             (default: ~/.video-clipper)
+#   VIDEO_CLIPPER_MODELS  models + the caption font           (default: $VIDEO_CLIPPER_HOME/models)
+#   VIDEO_CLIPS_DIR       where runs and clips are written     (default: ~/Video-Clips)
 set -uo pipefail
 
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-VENV="$SKILL_DIR/.venv"
-MODELS="${VIDEO_CLIPPER_MODELS:-$SKILL_DIR/models}"
+DATA="${VIDEO_CLIPPER_HOME:-$HOME/.video-clipper}"
+VENV="$DATA/venv"
+MODELS="${VIDEO_CLIPPER_MODELS:-$DATA/models}"
 CLIPS_DIR="${VIDEO_CLIPS_DIR:-$HOME/Video-Clips}"
 MODEL="small.en"; MULTI=0
 while [[ $# -gt 0 ]]; do
@@ -38,7 +40,8 @@ HF="https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 
 echo "Video Clipper setup"
 if [[ "$(uname)" != "Darwin" ]]; then echo "This skill supports macOS only."; exit 1; fi
-mkdir -p "$MODELS" "$MODELS/fonts" || { echo "Can't create $MODELS"; exit 1; }
+mkdir -p "$DATA" "$MODELS/fonts" || { echo "Can't create $DATA / $MODELS"; exit 1; }
+echo "  [info]    Data folder: $DATA (Python env, models, config)"
 
 # 1. Homebrew is used to install missing tools when it's there, but isn't required
 HAVE_BREW=0; command -v brew >/dev/null 2>&1 && HAVE_BREW=1
@@ -136,7 +139,7 @@ if [[ -n "$FREE_GB" ]] && (( FREE_GB < 3 )); then warn "Only ${FREE_GB} GB free 
 else ok "Clips folder: $CLIPS_DIR (${FREE_GB:-?} GB free)"; fi
 
 if [[ -x "$VENV/bin/python" ]]; then
-  WE="$WHISPER_EN" WM="$WHISPER_MULTI" YU="$YUNET" FO="$FONT" CD="$CLIPS_DIR" "$VENV/bin/python" - "$SKILL_DIR/config.json" <<'EOF'
+  WE="$WHISPER_EN" WM="$WHISPER_MULTI" YU="$YUNET" FO="$FONT" CD="$CLIPS_DIR" "$VENV/bin/python" - "$DATA/config.json" <<'EOF'
 import json, os, sys
 yunet = os.environ["YU"]
 cfg = {"whisper_model": os.environ["WE"], "whisper_model_multi": os.environ["WM"],
@@ -147,8 +150,8 @@ EOF
 fi
 
 if [[ $FAILED -eq 0 ]]; then
-  date > "$SKILL_DIR/.ready"
+  date > "$DATA/.ready"
   echo; echo "READY. In Claude Code say: clip this video <link or file path>"
 else
-  rm -f "$SKILL_DIR/.ready"; echo; echo "NOT READY: fix the [MISSING] items above and re-run: bash \"$SKILL_DIR/scripts/setup.sh\""; exit 1
+  rm -f "$DATA/.ready"; echo; echo "NOT READY: fix the [MISSING] items above and re-run: bash \"$SKILL_DIR/scripts/setup.sh\""; exit 1
 fi

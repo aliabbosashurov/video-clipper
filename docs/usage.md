@@ -78,14 +78,13 @@ Your original files are never modified. Temporary audio and video pieces are del
 Claude runs these for you. You can also run them yourself:
 
 ```bash
-S=~/.claude/skills/video-clipper
-PY="$S/.venv/bin/python"
+VC=~/.claude/skills/video-clipper/scripts/vclip   # manual install; for the plugin, use the folder from /plugin
 
-"$PY" "$S/scripts/vclip.py" prep ~/Movies/episode.mp4 --context "startup podcast"
+"$VC" prep ~/Movies/episode.mp4 --context "startup podcast"
 #   prints the run folder, e.g. ~/Video-Clips/2026-11-23-episode-1a2b3c4d5e
 #   then write picks/chunk_NN.json for every chunk (format: references/picking.md)
-"$PY" "$S/scripts/vclip.py" status ~/Video-Clips/2026-11-23-episode-1a2b3c4d5e
-"$PY" "$S/scripts/vclip.py" render ~/Video-Clips/2026-11-23-episode-1a2b3c4d5e
+"$VC" status ~/Video-Clips/2026-11-23-episode-1a2b3c4d5e
+"$VC" render ~/Video-Clips/2026-11-23-episode-1a2b3c4d5e
 ```
 
 ### `search QUERY`

@@ -8,18 +8,20 @@ description: Video Clipper. Turns any long video (podcast, interview, talk, gami
 Long video (link or file) -> 3 ready-to-post 1080x1920 clips. Everything except the picking runs on this
 Mac. The picking is done by YOU (this Claude Code session), so it needs no API keys.
 
-`S` = this skill's folder (the folder holding this SKILL.md). Always run Python through the skill's venv:
-`"$S/.venv/bin/python" "$S/scripts/vclip.py" ...`. Quote every path: they may contain spaces.
-This skill is self-contained: never use files, models or scripts from any other skill.
+`S` = this skill's folder: `${CLAUDE_SKILL_DIR}` (the folder holding this SKILL.md). Run every command
+through the wrapper `"$S/scripts/vclip" <command> ...` (it uses the Python environment made by setup).
+Quote every path: they may contain spaces. This skill is self-contained: never use files, models or
+scripts from any other skill.
 
 ## 0. Setup ("set up the video clipper", or any command says "Not set up yet")
 
 macOS only. On Windows or Linux, tell the user it isn't supported and stop.
 
-Run `bash "$S/scripts/setup.sh"`. It checks ffmpeg, whisper-cpp, deno, Python, builds `$S/.venv`, downloads
-the Whisper model, face detector and caption font into `$S/models`, writes `$S/config.json`, and prints
-READY or a list of `[MISSING]` items with how to install each one. Tell the user in plain words what was
-installed. If something is missing and Homebrew isn't installed, relay the hint lines; don't guess.
+Run `bash "$S/scripts/setup.sh"`. It checks ffmpeg, whisper-cpp, deno and Python, then builds the Python
+environment and downloads the Whisper model, face detector and caption font into `~/.video-clipper/`
+(`$VIDEO_CLIPPER_HOME`), outside the skill folder so plugin updates keep them. It prints READY or a list of
+`[MISSING]` items with how to install each one. Tell the user in plain words what was installed. If
+something is missing and Homebrew isn't installed, relay the hint lines; don't guess.
 
 - Non-English videos: `bash "$S/scripts/setup.sh" --multilingual`.
 - Slow Mac or low disk: `--model base.en` (faster, rougher transcript). Better accuracy: `--model medium.en`.

@@ -23,26 +23,42 @@ Setup checks for these tools and, if [Homebrew](https://brew.sh) is installed, i
 
 ## Install
 
-```bash
-# 1. Download the skill
-git clone https://github.com/aliabbosashurov/video-clipper.git ~/.claude/skills/video-clipper
+### Option A: as a plugin (recommended)
 
-# 2. Set it up
+In Claude Code, run:
+
+```
+/plugin marketplace add aliabbosashurov/video-clipper
+/plugin install video-clipper@aliabbosashurov
+```
+
+Or from your terminal:
+
+```bash
+claude plugin marketplace add aliabbosashurov/video-clipper
+claude plugin install video-clipper@aliabbosashurov
+```
+
+Then restart Claude Code and say *"set up the video clipper"*. Claude runs setup for you.
+
+### Option B: as a plain skill
+
+```bash
+git clone https://github.com/aliabbosashurov/video-clipper.git ~/.claude/skills/video-clipper
 bash ~/.claude/skills/video-clipper/scripts/setup.sh
 ```
 
-3. Restart Claude Code.
-
-To use the skill in one project only, clone it into `<your-project>/.claude/skills/video-clipper` instead.
-
-You can also ask Claude Code to *"set up the video clipper"*, and it will run setup for you.
+Then restart Claude Code. To use it in one project only, clone it into
+`<your-project>/.claude/skills/video-clipper` instead.
 
 ### What setup does
 
 - Checks each tool and installs missing ones with Homebrew (or tells you how to get them)
-- Creates a private Python environment in the skill folder (`.venv/`)
-- Downloads the speech model, a face detector and the caption font into `models/`
-- Writes `config.json` and prints `READY`
+- Creates a private Python environment in `~/.video-clipper/venv`
+- Downloads the speech model, a face detector and the caption font into `~/.video-clipper/models`
+- Writes `~/.video-clipper/config.json` and prints `READY`
+
+These live outside the skill folder, so updating the plugin doesn't delete them or download them again.
 
 It's safe to run again at any time. Re-running also updates the downloader, which fixes most download errors.
 
@@ -63,6 +79,8 @@ It's safe to run again at any time. Re-running also updates the downloader, whic
 
 Models ending in `.en` are English-only.
 
+Ask Claude (*"set up the video clipper with the multilingual model"*), or run it yourself:
+
 ```bash
 bash ~/.claude/skills/video-clipper/scripts/setup.sh --model medium.en
 bash ~/.claude/skills/video-clipper/scripts/setup.sh --multilingual
@@ -81,13 +99,14 @@ Install these yourself, then run setup again:
 
 ## Configuration
 
-Setup writes `config.json` in the skill folder (see [`config.example.json`](../config.example.json)).
+Setup writes `~/.video-clipper/config.json` (see [`config.example.json`](../config.example.json)).
 These environment variables override it:
 
 | variable | default | what it sets |
 |---|---|---|
 | `VIDEO_CLIPS_DIR` | `~/Video-Clips` | where clips and working files are saved |
-| `VIDEO_CLIPPER_MODELS` | `<skill folder>/models` | where setup stores models and the font (set it when you run setup) |
+| `VIDEO_CLIPPER_HOME` | `~/.video-clipper` | where the Python environment and `config.json` live |
+| `VIDEO_CLIPPER_MODELS` | `~/.video-clipper/models` | where setup stores models and the font (set it when you run setup) |
 | `VIDEO_CLIPPER_WHISPER_MODEL` | from `config.json` | path to a specific `ggml-*.bin` speech model |
 | `VIDEO_CLIPPER_FONT` | Anton, then Arial Black / Impact | font for the captions and hook (`.ttf` / `.otf`) |
 
@@ -95,16 +114,29 @@ If a speech model is already in `~/.cache/whisper-cpp/`, setup reuses it instead
 
 ## Updating
 
+Plugin:
+
+```bash
+claude plugin marketplace update aliabbosashurov
+claude plugin update video-clipper@aliabbosashurov
+```
+
+Plain skill:
+
 ```bash
 cd ~/.claude/skills/video-clipper && git pull
-bash scripts/setup.sh
 ```
+
+After updating, it's worth saying *"set up the video clipper"* once: it refreshes the downloader and installs
+anything new. Your models are kept.
 
 ## Uninstalling
 
 ```bash
-rm -rf ~/.claude/skills/video-clipper   # the skill, its Python environment and models
-rm -rf ~/Video-Clips                    # your clips: only if you no longer need them
+claude plugin uninstall video-clipper@aliabbosashurov   # plugin install
+rm -rf ~/.claude/skills/video-clipper                   # plain-skill install
+rm -rf ~/.video-clipper                                 # Python environment, models, config
+rm -rf ~/Video-Clips                                    # your clips: only if you no longer need them
 ```
 
 Tools installed with Homebrew (ffmpeg, whisper-cpp, deno) stay installed. Remove them with `brew uninstall`

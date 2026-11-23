@@ -48,21 +48,19 @@ See [Installation](docs/installation.md) for full details.
 
 ## Installation
 
-**1. Download the skill** into your Claude Code skills folder:
+**1. Install the plugin.** In Claude Code, run:
 
-```bash
-git clone https://github.com/aliabbosashurov/video-clipper.git ~/.claude/skills/video-clipper
+```
+/plugin marketplace add aliabbosashurov/video-clipper
+/plugin install video-clipper@aliabbosashurov
 ```
 
-**2. Run setup.** It installs what's missing and downloads the speech model (~465 MB):
+**2. Restart Claude Code.**
 
-```bash
-bash ~/.claude/skills/video-clipper/scripts/setup.sh
-```
+**3. Say "set up the video clipper".** Claude installs what's missing and downloads the speech model
+(~465 MB). For videos that aren't in English, say "set up the video clipper with the multilingual model".
 
-Wait for `READY`. For videos that aren't in English, add `--multilingual`.
-
-**3. Restart Claude Code.** That's it.
+Prefer a plain skill without the plugin system? See [other install options](docs/installation.md#install).
 
 ## Usage
 

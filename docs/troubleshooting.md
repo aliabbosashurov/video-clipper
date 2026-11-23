@@ -6,9 +6,10 @@
 
 | problem | fix |
 |---|---|
-| `Not set up yet` | Run `bash ~/.claude/skills/video-clipper/scripts/setup.sh` and wait for `READY`. |
+| `Not set up yet` | Say *"set up the video clipper"* in Claude Code (or run `scripts/setup.sh`) and wait for `READY`. |
 | Setup shows `[MISSING]` items | Install each listed item (the line says how), then run setup again. Without Homebrew, see [Installing without Homebrew](installation.md#installing-without-homebrew). |
-| Claude doesn't know the skill | Check the folder is at `~/.claude/skills/video-clipper` with `SKILL.md` inside, then restart Claude Code. |
+| Claude doesn't know the skill | Plugin: check `claude plugin list` shows `video-clipper` as enabled. Plain skill: check the folder is at `~/.claude/skills/video-clipper` with `SKILL.md` inside. Then restart Claude Code. |
+| Setup runs again after every plugin update | It shouldn't need to download anything: models are kept in `~/.video-clipper`. If you moved them, set `VIDEO_CLIPPER_HOME` to the new folder. |
 | Captions use a plain font | The font download failed. Run setup again, or set `VIDEO_CLIPPER_FONT` to a `.ttf` file. |
 
 ## Downloads
