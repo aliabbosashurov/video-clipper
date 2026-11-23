@@ -79,7 +79,11 @@ Then fine-tune in the same chat:
 make clip 2 start a bit earlier
 give clip 1 a different hook
 clip 3 cuts off the speaker, show the full frame instead
+make the clips in high quality
 ```
+
+Quality levels are **fast**, **standard** (the default), **high** (1440p) and **max** (up to 4K). Higher
+quality gives a sharper facecam but takes longer. See [Quality](docs/usage.md#quality).
 
 Your clips are saved in `~/Video-Clips/`, and Claude opens the folder when it's done.
 

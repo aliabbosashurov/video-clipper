@@ -28,6 +28,8 @@
 | The transcript is gibberish | The language is wrong. Tell Claude the video's language, or ask it to detect it (`--lang auto --force`). |
 | Wrong face on top, or speaker cut off | Tell Claude which layout to use for that clip (`full`, `cam` or `facecam`). |
 | Fewer clips than asked for | Not enough moments passed the quality bar. Ask for more anyway (`--min-score 6`), or the video may not have more good moments. |
+| The streamer's camera looks blurry | The webcam box is small in the original and gets enlarged. Ask for `high quality` (or `max` for 4K videos) and re-render. |
+| Rendering is slow | You may be on `high` or `max` quality. `standard` or `fast` render quicker. |
 | Transcribing is slow | Use a smaller model (`setup.sh --model base.en`) and process one video at a time (`--jobs 1`). |
 | Disk is filling up | Old run folders stay in `~/Video-Clips/`. Delete the ones you've finished with. |
 

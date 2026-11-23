@@ -42,6 +42,23 @@ Each clip is framed automatically, based on what's on screen:
 
 If a clip is framed wrong, tell Claude which layout to use for it.
 
+## Quality
+
+Clips are always 1080×1920, but a sharper source makes a big difference when a small webcam box is
+enlarged to fill the top half. Choose a level by asking, for example `clip <link> in high quality`, or
+`make clip 1 sharper`:
+
+| level | say | source video | speed |
+|---|---|---|---|
+| fast | "small files", "low quality" | up to 720p | about the same time, smaller and softer files |
+| **standard** (default) | nothing | up to 1080p | normal |
+| high | "high quality", "sharper", "1440p" | up to 1440p, sharper encode | ~25 % slower per clip, ~2× file size |
+| max | "max", "best", "4K" | the best the video has (4K if available) | slowest on 4K videos. Same as high otherwise |
+
+Measured on one 68-second clip from a 1440p stream: fast 66 s / 18 MB, standard 69 s / 25 MB, high
+87 s / 48 MB. `high` gave the facecam about 2.7× more fine detail than `standard`. For local files, the
+file's own resolution is always used; the level only changes the encode.
+
 ## Where your clips are
 
 Each video gets its own folder in `~/Video-Clips/`:
@@ -125,6 +142,7 @@ Makes the clips from the picked moments.
 | `--min-score` | `7` | quality bar from 0 to 10 (lower it to get more clips) |
 | `--max-len` | `75` | longest clip in seconds |
 | `--layout` | `auto` | `auto`, `facecam`, `cam` or `full` for every clip |
+| `--quality` | `standard` | `fast` (720p), `standard` (1080p), `high` (1440p), `max` (best available, up to 4K). Also accepts `720p`, `1080p`, `1440p`, `4k` |
 | `--cookies` | from prep | same as for prep |
 | `--keep` | | keep the downloaded video pieces |
 

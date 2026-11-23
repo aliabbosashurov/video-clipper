@@ -61,7 +61,7 @@ $S/SKILL.md for this run folder". Up to 4 at once.
 
 ## 4. Make the clips
 
-`render <run>` (defaults `--top 3 --min-score 7 --max-len 75 --layout auto`). It ranks the picks, drops
+`render <run>` (defaults `--top 3 --min-score 7 --max-len 75 --layout auto --quality standard`). It ranks the picks, drops
 overlaps, snaps to sentence edges, downloads (or cuts from the local file) only those minutes, chooses a
 layout, burns in the hook + word-by-word captions, normalises loudness, and writes
 `clips/clip_NN_<title>.mp4` + `.txt` (title, caption, hashtags, source + timestamp) + `summary.json`.
@@ -79,6 +79,20 @@ the screen matters more than the face. If fewer clips came out than asked becaus
 and offer `--min-score 6` rather than quietly lowering the bar. Pass the same `--cookies` if prep needed
 them (they're remembered in `stream.json`).
 
+Quality (`--quality`): how sharp the source is before it's cut to 1080x1920. Output size is always the same;
+a bigger source mainly sharpens a small facecam. Use `standard` unless the user asks otherwise, and map
+their words:
+
+| user says | flag | source | cost per clip (measured, 68 s clip) |
+|---|---|---|---|
+| "small files", "low quality", "fast" | `--quality fast` | up to 720p | ~65 s, ~18 MB (barely faster, softer) |
+| nothing / "normal" | `--quality standard` | up to 1080p | ~70 s, ~25 MB |
+| "high quality", "sharper", "HD", "1440p" | `--quality high` | up to 1440p, sharper encode | ~90 s, ~50 MB |
+| "max", "best", "4K" | `--quality max` | best available (4K if it exists) | slowest; same as `high` when there's no 4K |
+
+If the user complains the facecam / streamer looks blurry, suggest `--quality high` and re-render (delete
+the old mp4s first). Local files are always used at their own resolution; quality only changes the encode.
+
 ## 5. Check and report
 
 Check one frame of every clip: `ffmpeg -loglevel error -ss 5 -i "<clip.mp4>" -frames:v 1 "<run>/check_NN.jpg"`
@@ -93,6 +107,6 @@ clip before posting and to only clip content they have the rights or permission 
 
 - "Make clip 2 longer / start earlier / new hook": edit that entry in the matching `picks/*.json`, delete
   the old mp4, re-run render (selection is deterministic, so the same picks come back with the change).
-- "Give me 5 clips": `render <run> --top 5`. Longer clips: `--max-len 90`.
+- "Give me 5 clips": `render <run> --top 5`. Longer clips: `--max-len 90`. Sharper: `--quality high`.
 - Disk: prep deletes its audio after transcribing; render deletes downloaded sections (`--keep` keeps
   them). Delete old run folders only if the user says so.
