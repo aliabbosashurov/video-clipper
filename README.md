@@ -20,18 +20,22 @@ moments and turns them into short clips for TikTok, YouTube Shorts and Instagram
 
 For every video, 3 clips (or as many as you ask for), each with:
 
-- **Vertical 9:16 video** (1080×1920), framed automatically: facecam on top for streams, a crop on the
-  speaker for podcasts, or the full frame for screen recordings
+- **Vertical 9:16 video** (1080×1920), framed automatically: facecam on top for streams (found anywhere on
+  screen, even flush in a corner, without the overlay graphics around it), a crop on the speaker for
+  podcasts, or the full frame for screen recordings
 - **A hook title** on screen that makes people stop scrolling
-- **Word-by-word captions** that highlight each word as it's spoken
+- **Word-by-word captions** that highlight each word as it's spoken, placed where the TikTok, Reels and
+  Shorts buttons and description won't cover them
 - **Even, platform-ready loudness**
 - **A ready-to-paste post**: title, caption and hashtags in a text file next to the clip
+- **A cover image** (thumbnail) for each clip
 
 ## How it works
 
 1. **Listen.** It downloads only the audio (or reads your file) and transcribes it on your Mac.
-2. **Pick.** Claude reads the transcript and picks the moments worth sharing: stories, insights, hot
-   takes, funny bits and reactions.
+2. **Pick.** Claude reads the cleaned-up transcript (silence and music markers removed, with overlapping
+   pieces so no moment is cut in half) and picks the moments worth sharing: stories, insights, hot takes,
+   funny bits and reactions.
 3. **Cut.** It downloads only those few minutes of video and renders the clips.
 
 Transcription and rendering run on your Mac. You don't need an API key: the picking happens inside your own

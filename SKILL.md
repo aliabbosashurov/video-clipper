@@ -39,6 +39,8 @@ something is missing and Homebrew isn't installed, relay the hint lines; don't g
   (`--when today|week|month|any`, `--limit N`, `--min-minutes 20`), show the list, then `prep` the URLs.
 - Age-restricted YouTube or Kick: add `--cookies chrome` (or safari/firefox). Retry with it if a download
   fails with "Sign in to confirm" / 403.
+- When an error ends with a `Hint:` line (sign-in, private, region-blocked, members-only, removed video…),
+  follow the hint or pass it on to the user in plain words; don't retry blindly.
 - `--jobs 2` (default) preps 2 videos at once; don't go higher on a 16 GB Mac.
 - Long videos take minutes (download + transcript; Intel Macs are much slower). Run prep in the background
   for long or multiple videos and tell the user it's running.
@@ -54,6 +56,8 @@ Read `$S/references/picking.md` first, every time. Then for each run folder:
 2. For each chunk write `picks/chunk_NN.json` (same NN): a JSON array of moments as described in
    picking.md, or `[]` if nothing qualifies. Always write the file, even when empty: that's the progress record.
 3. `status <run>` lists chunks that still have no picks file in `chunks_left`. Keep going until it's empty.
+   It also lists `bad_picks` (invalid JSON, or entries missing `start` / `end` / `score`): fix them before
+   rendering. Render skips a file it can't read and any single broken entry (it says which).
 
 Several videos: give each one its own subagent (Agent tool, general-purpose) with the run folder path, the
 path to `$S/references/picking.md`, and the instruction "read picking.md, then do step 3 of
@@ -64,7 +68,10 @@ $S/SKILL.md for this run folder". Up to 4 at once.
 `render <run>` (defaults `--top 3 --min-score 7 --max-len 75 --layout auto --quality standard`). It ranks the picks, drops
 overlaps, snaps to sentence edges, downloads (or cuts from the local file) only those minutes, chooses a
 layout, burns in the hook + word-by-word captions, normalises loudness, and writes
-`clips/clip_NN_<title>.mp4` + `.txt` (title, caption, hashtags, source + timestamp) + `summary.json`.
+`clips/clip_NN_<title>.mp4` + `.jpg` (cover image) + `.txt` (title, caption, hashtags, source +
+timestamp) + `summary.json`. Temporary files are removed even if a clip fails. Re-rendering replaces the
+previous files of the same clip number (also when its title changed), so there's nothing to delete first.
+Captions and the hook stay inside the area TikTok / Reels / Shorts leave free of their own buttons and text.
 
 Layouts (auto-detected per clip, from faces found across the clip):
 - `facecam`: a small face inside a box with fixed edges (any position) over moving content (streams,
@@ -90,14 +97,14 @@ their words:
 | "high quality", "sharper", "HD", "1440p" | `--quality high` | up to 1440p, sharper encode | ~90 s, ~50 MB |
 | "max", "best", "4K" | `--quality max` | best available (4K if it exists) | slowest; same as `high` when there's no 4K |
 
-If the user complains the facecam / streamer looks blurry, suggest `--quality high` and re-render (delete
-the old mp4s first). Local files are always used at their own resolution; quality only changes the encode.
+If the user complains the facecam / streamer looks blurry, suggest `--quality high` and re-render. Local
+files are always used at their own resolution; quality only changes the encode.
 
 ## 5. Check and report
 
-Check one frame of every clip: `ffmpeg -loglevel error -ss 5 -i "<clip.mp4>" -frames:v 1 "<run>/check_NN.jpg"`
-and look at it. If the framing is wrong (wrong face on top, speaker cut off, screen unreadable), add
-`"layout": "full"` (or `"cam"` / `"facecam"`) to that pick in `picks/*.json`, delete that mp4, re-run render.
+Look at each clip's cover image `clips/clip_NN_<title>.jpg` (don't extract extra frames into the run
+folder). If the framing is wrong (wrong face on top, speaker cut off, screen unreadable), add
+`"layout": "full"` (or `"cam"` / `"facecam"`) to that pick in `picks/*.json` and re-run render.
 
 Then report per video: length -> moments found -> clips kept, and for each clip its title, timestamp,
 length, layout and file path. Open the folder with `open "<run>/clips"`. Remind the user to watch every
@@ -105,8 +112,9 @@ clip before posting and to only clip content they have the rights or permission 
 
 ## Other requests
 
-- "Make clip 2 longer / start earlier / new hook": edit that entry in the matching `picks/*.json`, delete
-  the old mp4, re-run render (selection is deterministic, so the same picks come back with the change).
+- "Make clip 2 longer / start earlier / new hook": edit that entry in the matching `picks/*.json` and
+  re-run render (selection is deterministic, so the same picks come back with the change; the old version
+  of the clip is replaced).
 - "Give me 5 clips": `render <run> --top 5`. Longer clips: `--max-len 90`. Sharper: `--quality high`.
 - Disk: prep deletes its audio after transcribing; render deletes downloaded sections (`--keep` keeps
   them). Delete old run folders only if the user says so.

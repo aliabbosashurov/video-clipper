@@ -12,11 +12,20 @@ Chunk 4/11  (00:36:00 to 00:48:00)
 Context: science podcast, guest is a sleep researcher
 Markers: LOUD(+dB over normal) = speaker got loud. CHAT xN = chat moving N times faster than normal.
 
-[00:41:12] So I got fired the same morning the app hit number one.   <<LOUD(+11dB)>>
-[00:41:16] My manager walks in, I'm refreshing the charts...
+(end of the previous chunk, for context. Use it only for a moment that continues into this chunk)
+[00:35:20] ...and that's when the board called me in.
+[00:35:48] I thought it was about the budget.
+(this chunk starts here)
+[00:36:02] So I got fired the same morning the app hit number one.   <<LOUD(+11dB)>>
+[00:36:06] My manager walks in, I'm refreshing the charts...
 ```
 
 - `[HH:MM:SS]` is where that line starts in the ORIGINAL video. Always use these timestamps.
+- From chunk 2 on, the chunk opens with the last minute of the previous chunk, between the two
+  `(...)` lines. That part was already read last time. Use it only when a moment **starts there and
+  continues into this chunk** (so it was cut off before). Don't pick a moment that lies entirely inside it.
+- Silence and music markers (`[BLANK_AUDIO]`, `[MUSIC]`, `♪♪`) are already removed. Reaction tags like
+  `[laughs]`, `(screaming)` or `(applause)` are kept: they're good signals.
 - `Context:` (if present) is what the user told you about the video and audience. Use it to judge what matters.
 - `<<LOUD(+NdB)>>`: the speaker got N dB louder than the surrounding 3 minutes (yelling, laughing, arguing).
 - `<<CHAT xN>>`: live chat (YouTube replays) moved N times faster than normal. Chat reacts a few seconds
@@ -47,8 +56,7 @@ no marker can be. Calm formats (podcasts, tutorials) have few markers: judge the
   the first real sentence. If there isn't one, drop it.
 - Intros, outros, sponsor reads, ads, "like and subscribe", reading chat / donations, dead air, loading or
   waiting screens, "can you hear me?".
-- Whisper junk: repeated lines, `[Music]`, `[BLANK_AUDIO]`, "Thank you." over and over, text that obviously
-  doesn't match the video.
+- Whisper junk that slipped through: "Thank you." over and over, text that obviously doesn't match the video.
 - Anything hateful, sexual, or about real people's private lives; medical, legal or financial advice that
   could hurt someone once it's cut out of context.
 
@@ -70,7 +78,10 @@ Most chunks have 0-2 real candidates. Many have none. That's normal.
 - `end` = the timestamp of the first line AFTER the payoff (the punchline, the point lands, the reaction
   peaks). Don't trail off. Render snaps both ends to sentence edges.
 - A moment that runs past the end of this chunk is fine: use the last timestamp you can see for `end`, or
-  extend by the time the line obviously needs. Don't pick the same moment again in the next chunk.
+  extend by the time the line obviously needs. The next chunk starts with this minute again, so you'll see
+  the rest of it there. Picking the same moment twice is harmless (render keeps the higher score), but
+  avoid it.
+- One broken entry (say, a missing `end`) is skipped on its own; the other moments in the file still count.
 - Timestamps are strings `"HH:MM:SS"` (plain seconds as numbers also work). `end` must be after `start`.
 
 ## Output: `picks/chunk_NN.json`

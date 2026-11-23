@@ -28,7 +28,8 @@ After the clips are made, ask in the same chat:
 - `clip 2 shows the wrong face, use the full frame`
 - `lower the bar, I want more clips`
 
-Claude edits the moment and renders that clip again.
+Claude edits the moment and renders that clip again. The new version **replaces** the old one, also when
+the title (and so the file name) changed, so the clips folder only ever holds the current clips.
 
 ## Layouts
 
@@ -67,6 +68,7 @@ Each video gets its own folder in `~/Video-Clips/`:
 ~/Video-Clips/2026-11-23-my-podcast-1a2b3c4d5e/
 ├── clips/
 │   ├── clip_01_he-got-fired-the-day-his-app-went-1.mp4   ← the clip
+│   ├── clip_01_he-got-fired-the-day-his-app-went-1.jpg   ← cover image (thumbnail)
 │   ├── clip_01_he-got-fired-the-day-his-app-went-1.txt   ← title, caption, hashtags to paste
 │   └── summary.json
 ├── chunks/     the transcript, in 12-minute pieces

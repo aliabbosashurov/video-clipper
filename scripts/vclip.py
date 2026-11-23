@@ -75,15 +75,57 @@ def parse_ts(v):
     return sec
 
 
-def slug(s, n=40):
+def slug(s, n=40, whole_words=False):
     s = re.sub(r"[^a-zA-Z0-9]+", "-", s or "video").strip("-").lower()
+    if whole_words and len(s) > n and "-" in s[:n + 1]:
+        return s[:n + 1].rsplit("-", 1)[0]  # "...-in-gta-6" instead of "...-in-gta-6-an"
     return s[:n] or "video"
+
+
+def hashtags(tags):
+    """'#GTA6', 'gta 6', '#gta6' -> one '#GTA6'. Accepts a list or a space-separated string."""
+    if isinstance(tags, str):
+        tags = tags.split()
+    out, seen = [], set()
+    for t in tags or []:
+        if not isinstance(t, str):
+            continue
+        t = re.sub(r"[^\w]", "", t)  # drops '#', spaces and punctuation, keeps letters in any language
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append("#" + t)
+    return " ".join(out)
+
+
+# common download errors -> what to do about them (shown under the original message)
+ERROR_HINTS = [
+    (r"sign in to confirm|not a bot|confirm your age|age.restricted|inappropriate for some users",
+     "log in to the site in your browser, then retry with --cookies chrome (or safari / firefox)"),
+    (r"members.only|join this channel|available to this channel's members",
+     "members-only video: retry with --cookies <browser> logged in to an account that is a member"),
+    (r"private video", "this video is private and can't be downloaded"),
+    (r"available in your country|geo.?restrict|blocked it in your country",
+     "this video is blocked in your region"),
+    (r"video unavailable|has been removed|does not exist", "the video was removed or the link is wrong"),
+    (r"unsupported url", "this site or link type isn't supported by yt-dlp"),
+    (r"http error 429|too many requests", "the site is rate-limiting you: wait a while, or retry with --cookies <browser>"),
+    (r"http error 403|forbidden", "access denied: re-run setup.sh (updates yt-dlp), or retry with --cookies <browser>"),
+    (r"requested format is not available", "re-run setup.sh (updates yt-dlp), or try a lower --quality"),
+]
+
+
+def explain(msg):
+    """Original error + a one-line hint for the errors people hit most."""
+    for pat, hint in ERROR_HINTS:
+        if re.search(pat, msg, re.I):
+            return f"{msg}\n    Hint: {hint}"
+    return msg
 
 
 def ytdlp_json(url, cookies=None, extra=()):
     r = run(YTDLP + cookie_args(cookies) + list(extra) + ["-J", url])
     if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "yt-dlp failed")
+        raise RuntimeError(explain(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "yt-dlp failed"))
     return json.loads(r.stdout)
 
 
@@ -218,6 +260,26 @@ def transcribe(wav, out_base, lang="en", words=False):
     return segs
 
 
+# Whisper writes these for silence / music. Tags that describe a reaction ([laughs], (applause)) are kept:
+# they help the picking.
+JUNK_LINE = re.compile(r"^\s*(?:[\[(](?!.*(?:laugh|applause|cheer|scream|gasp|clap))[^\])]*[\])]|[♪♫\s.,!?-]+)\s*$",
+                       re.I)
+
+
+def clean_segments(segs):
+    """Drop silence / music markers and merge a line that just repeats the previous one (a Whisper glitch)."""
+    out = []
+    for s in segs:
+        if JUNK_LINE.match(s["text"]):
+            continue
+        key = re.sub(r"[^\w]", "", s["text"].lower())
+        if out and key and key == re.sub(r"[^\w]", "", out[-1]["text"].lower()):
+            out[-1]["end"] = s["end"]
+            continue
+        out.append(s)
+    return out
+
+
 def source_info(src, cookies, name):
     """Metadata for a link (via yt-dlp) or a local video file."""
     p = local_file(src)
@@ -255,7 +317,7 @@ def download_audio(rd, info):
                                                  "bestaudio/audio_only/worst", "-o", str(rd / "audio.%(ext)s"), url])
         src = next((p for p in rd.glob("audio.*") if p.suffix not in (".part", ".ytdl", ".wav")), None)
     if not src:
-        raise RuntimeError(f"audio download failed: {ra.stderr[-300:]}")
+        raise RuntimeError(explain(f"audio download failed: {ra.stderr[-300:].strip()}"))
     return src
 
 
@@ -272,6 +334,15 @@ def prep_one(src, a):
         log(f"[{who}] already prepped -> {rd}")
         return {"run": str(rd), "streamer": who, "cached": True}
 
+    try:
+        return _prep_audio_and_chunks(rd, info, a, t0)
+    finally:  # also after a crash or Ctrl-C: never leave the big temporary audio behind
+        for p in [*rd.glob("audio.*"), rd / "whisper.json"]:
+            p.unlink(missing_ok=True)
+
+
+def _prep_audio_and_chunks(rd, info, a, t0):
+    who = info["streamer"]
     wav = rd / "audio.wav"
     if info["platform"] == "local":
         log(f"[{who}] 1/2 reading audio from the file ({hms(info['duration'])})")
@@ -289,44 +360,58 @@ def prep_one(src, a):
     with cf.ThreadPoolExecutor(2) as ex:
         fs = ex.submit(transcribe, wav, rd / "whisper", a.lang)
         fl = ex.submit(loud_moments, wav)
-        segs = fs.result()
+        raw = fs.result()
         loud, _ = fl.result()
     chat = chat_spikes(next(iter(rd.glob("chat*.live_chat.json")), None))
     wav.unlink(missing_ok=True)
     (rd / "whisper.json").unlink(missing_ok=True)
+    segs = clean_segments(raw)
     (rd / "transcript.json").write_text(json.dumps(segs))
     (rd / "signals.json").write_text(json.dumps({"loud": loud, "chat": chat}, indent=1))
-
-    # ---- chunks with signal markers inline
-    chunk_sec = a.chunk_min * 60
-    dur = info.get("duration") or (segs[-1]["end"] if segs else 0)
-    n = max(1, math.ceil(dur / chunk_sec))
-    for ci in range(n):
-        lo, hi = ci * chunk_sec, (ci + 1) * chunk_sec
-        lines = [f"# {who}: {info['title']}", f"Chunk {ci + 1}/{n}  ({hms(lo)} to {hms(hi)})"]
-        if a.context:
-            lines.append(f"Context: {a.context}")
-        lines += ["Markers: LOUD(+dB over normal) = speaker got loud. CHAT xN = chat moving N times faster than normal.", ""]
-        for s in segs:
-            if s["end"] <= lo or s["start"] >= hi:
-                continue
-            tags = []
-            for e in loud:
-                if e["start"] <= s["end"] and e["end"] + 1 >= s["start"]:
-                    tags.append(f"LOUD(+{e['db']:.0f}dB)")
-                    break
-            for e in chat:  # chat reacts a few seconds late
-                if e["start"] - 15 <= s["end"] and e["end"] >= s["start"]:
-                    tags.append(f"CHAT x{e['x']}")
-                    break
-            lines.append(f"[{hms(s['start'])}] {s['text']}" + (f"   <<{' '.join(tags)}>>" if tags else ""))
-        (rd / "chunks" / f"chunk_{ci + 1:02d}.md").write_text("\n".join(lines) + "\n")
+    n = write_chunks(rd, info, segs, loud, chat, a.chunk_min * 60, a.context)
     timing = {"prep_started": t0, "download_sec": round(t_dl - t0), "analyse_sec": round(time.time() - t_dl),
-              "chunks": n, "segments": len(segs), "loud_events": len(loud), "chat_spikes": len(chat)}
+              "chunks": n, "segments": len(segs), "junk_lines_removed": len(raw) - len(segs),
+              "loud_events": len(loud), "chat_spikes": len(chat)}
     (rd / "timing.json").write_text(json.dumps(timing, indent=1))
     log(f"[{who}] ready: {n} chunks, {len(loud)} loud moments, {len(chat)} chat spikes "
         f"({round(time.time() - t0)}s) -> {rd}")
     return {"run": str(rd), "streamer": who, "chunks": n}
+
+
+OVERLAP_SEC = 60  # each chunk repeats the end of the previous one, so a moment on the boundary isn't cut in half
+
+
+def write_chunks(rd, info, segs, loud, chat, chunk_sec, context=None):
+    """Transcript pieces for the picker, with LOUD / CHAT markers inline. Returns the number of chunks."""
+    who = info["streamer"]
+    dur = info.get("duration") or (segs[-1]["end"] if segs else 0)
+    n = max(1, math.ceil(dur / chunk_sec))
+
+    def line(s):
+        tags = []
+        for e in loud:
+            if e["start"] <= s["end"] and e["end"] + 1 >= s["start"]:
+                tags.append(f"LOUD(+{e['db']:.0f}dB)")
+                break
+        for e in chat:  # chat reacts a few seconds late
+            if e["start"] - 15 <= s["end"] and e["end"] >= s["start"]:
+                tags.append(f"CHAT x{e['x']}")
+                break
+        return f"[{hms(s['start'])}] {s['text']}" + (f"   <<{' '.join(tags)}>>" if tags else "")
+
+    for ci in range(n):
+        lo, hi = ci * chunk_sec, (ci + 1) * chunk_sec
+        lines = [f"# {who}: {info['title']}", f"Chunk {ci + 1}/{n}  ({hms(lo)} to {hms(hi)})"]
+        if context:
+            lines.append(f"Context: {context}")
+        lines += ["Markers: LOUD(+dB over normal) = speaker got loud. CHAT xN = chat moving N times faster than normal.", ""]
+        prev = [s for s in segs if lo - OVERLAP_SEC <= s["start"] and s["end"] <= lo] if ci else []
+        if prev:
+            lines += ["(end of the previous chunk, for context. Use it only for a moment that continues into this chunk)"]
+            lines += [line(s) for s in prev] + ["(this chunk starts here)"]
+        lines += [line(s) for s in segs if not (s["end"] <= lo or s["start"] >= hi)]
+        (rd / "chunks" / f"chunk_{ci + 1:02d}.md").write_text("\n".join(lines) + "\n")
+    return n
 
 
 def cmd_prep(a):
@@ -351,10 +436,24 @@ def cmd_status(a):
     chunks = sorted((rd / "chunks").glob("chunk_*.md"))
     picked = {p.stem for p in (rd / "picks").glob("chunk_*.json")}
     todo = [c.name for c in chunks if c.stem not in picked]
-    cands = sum(len(json.loads(p.read_text())) for p in (rd / "picks").glob("chunk_*.json"))
+    cands, bad = 0, []
+    for p in sorted((rd / "picks").glob("chunk_*.json")):
+        try:
+            entries = json.loads(p.read_text())
+            if not isinstance(entries, list):
+                raise ValueError("must be a JSON array ([] when nothing qualifies)")
+        except Exception as e:  # report it instead of crashing, so the file can be fixed
+            bad.append({"file": p.name, "error": str(e)})
+            continue
+        cands += len(entries)
+        for i, c in enumerate(entries):
+            missing = [k for k in ("start", "end", "score") if not isinstance(c, dict) or k not in c]
+            if missing:
+                bad.append({"file": p.name, "entry": i, "error": f"missing {', '.join(missing)}"})
     log(json.dumps({"run": str(rd), "chunks": len(chunks), "picked_chunks": len(picked), "candidates": cands,
-                    "chunks_left": todo, "clips": sorted(x.name for x in (rd / "clips").glob("*.mp4"))
-                    if (rd / "clips").exists() else []}, indent=1))
+                    "chunks_left": todo, "bad_picks": bad,
+                    "clips": sorted(x.name for x in (rd / "clips").glob("*.mp4")) if (rd / "clips").exists() else []},
+                   indent=1, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------- render (step 4)
@@ -363,11 +462,21 @@ def select(rd, top, min_score, max_len):
     cands = []
     for p in sorted((rd / "picks").glob("chunk_*.json")):
         try:
-            for c in json.loads(p.read_text()):
-                c["_s"], c["_e"] = parse_ts(c["start"]), parse_ts(c["end"])
-                cands.append(c)
+            entries = json.loads(p.read_text())
         except Exception as e:
             log(f"  bad pick file {p.name}: {e}")
+            continue
+        for i, c in enumerate(entries if isinstance(entries, list) else []):
+            try:  # one broken entry must not take the other moments in the file down with it
+                c["_s"], c["_e"] = parse_ts(c["start"]), parse_ts(c["end"])
+                float(c.get("score", 0))
+            except Exception as e:
+                log(f"  skipped {p.name} entry {i + 1}: {'missing ' + str(e) if isinstance(e, KeyError) else e}")
+                continue
+            if c["_e"] <= c["_s"]:
+                log(f"  skipped {p.name} entry {i + 1}: end is not after start")
+                continue
+            cands.append(c)
     total = len(cands)
     ok = []
     for c in sorted(cands, key=lambda c: -float(c.get("score", 0))):
@@ -460,32 +569,49 @@ def _find_facecam(video, W, H, scale=1.0):
     gx = np.median(np.stack([g[0] for g in grads]), axis=0)  # vertical edges, static over time
     gy = np.median(np.stack([g[1] for g in grads]), axis=0)  # horizontal edges
 
-    def scan(profile, start, stop):
+    def scan(profile, start, stop, nearest=False):
+        """Strongest static edge between start (near the face) and stop. nearest=True takes the strong edge
+        closest to the face instead: overlay graphics right under / over a cam (a viewer-count bar, a name
+        plate) make a second, often stronger, edge further out."""
         rng = range(int(start), int(stop), 1 if stop > start else -1)
         vals = [(profile[i], i) for i in rng if 0 <= i < len(profile)]
         if len(vals) < 5:
             return None
-        v, i = max(vals)
-        return i if v > 3.5 * (statistics.median(x for x, _ in vals) + 1e-3) and v > 6 else None
+        top, i = max(vals)
+        if not (top > 3.5 * (statistics.median(x for x, _ in vals) + 1e-3) and top > 6):
+            return None
+        return next(j for v, j in vals if v >= 0.6 * top) if nearest else i
 
-    y0, y1 = int(max(0, fy - fh * 0.5)), int(min(H, fy + fh * 1.5))
     x0, x1 = int(max(0, fx - fw * 0.5)), int(min(W, fx + fw * 1.5))
-    colp = gx[y0:y1].mean(axis=0)
     rowp = gy[:, x0:x1].mean(axis=1)
-    L = scan(colp, fx - fw * 0.15, fx - fw * 2.6)
-    R = scan(colp, fx + fw * 1.15, fx + fw * 3.6)
-    T = scan(rowp, fy - fh * 0.15, fy - fh * 2.2)
-    B = scan(rowp, fy + fh * 1.15, fy + fh * 3.2)
+    T = scan(rowp, fy - fh * 0.15, fy - fh * 2.2, nearest=True)
+    B = scan(rowp, fy + fh * 1.15, fy + fh * 3.2, nearest=True)
+    # side edges: averaged over the whole cam height once top/bottom are known, so a real window edge
+    # (full height) beats objects in the room behind the streamer (only part of the height)
+    y0 = int(T) if T is not None else int(max(0, fy - fh * 0.5))
+    y1 = int(B) if B is not None else int(min(H, fy + fh * 1.5))
+    colp = gx[y0:max(y1, y0 + 1)].mean(axis=0)
+    L = scan(colp, fx - fw * 0.15, fx - fw * 4.0)
+    R = scan(colp, fx + fw * 1.15, fx + fw * 4.0)
     # an overlay in a corner shows 2 edges (the other two are the frame border); none means a camera shot
     if sum(e is not None for e in (L, R, T, B)) < 2:
         return shot
-    # fallbacks for missing edges: typical facecam framing around the face
+    # fallbacks for missing edges: typical facecam framing around the face; a guess that lands near the
+    # frame border means the cam sits flush in that corner, so use the border itself
     cw_guess = fw * 3.4
     ch_guess = cw_guess * 0.75
-    L = L if L is not None else fx + fw / 2 - cw_guess / 2
-    R = R if R is not None else fx + fw / 2 + cw_guess / 2
-    T = T if T is not None else fy + fh * 0.45 - ch_guess * 0.45
-    B = B if B is not None else fy + fh * 0.45 + ch_guess * 0.55
+    if L is None:
+        L = fx + fw / 2 - cw_guess / 2
+        L = 0 if L < fw * 0.8 else L
+    if R is None:
+        R = fx + fw / 2 + cw_guess / 2
+        R = W if W - R < fw * 0.8 else R
+    if T is None:
+        T = fy + fh * 0.45 - ch_guess * 0.45
+        T = 0 if T < fh * 0.8 else T
+    if B is None:
+        B = fy + fh * 0.45 + ch_guess * 0.55
+        B = H if H - B < fh * 0.8 else B
     L, R = max(0, L + 2), min(W, R - 2)
     T, B = max(0, T + 2), min(H, B - 2)
     if R - L < fw * 1.4 or B - T < fh * 1.4 or (R - L) * (B - T) > W * H * 0.35:
@@ -530,17 +656,24 @@ def wrap(draw, text, fnt, maxw):
     return lines + ([cur] if cur else [])
 
 
+# TikTok / Reels / Shorts draw their own UI over the video: description + music along the bottom and the
+# like / comment / share buttons down the right side. Keep text inside this box (1080x1920 frame).
+SAFE_MAX_Y = 1400   # caption line centre stays above the bottom description area
+SAFE_TEXT_W = 840   # 120..960: clear of the button column on the right
+
+
 def caption_frames(words, hook, seam_y, cap_y, dur, outdir):
     """Build one transparent 1080x1920 PNG per caption state + an ffconcat list."""
     from PIL import Image, ImageDraw
     outdir.mkdir(exist_ok=True)
     hf, cf_ = font(50), font(84)
+    cap_y = min(cap_y, SAFE_MAX_Y)
 
     def base():
         im = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
         d = ImageDraw.Draw(im)
         if hook:
-            lines = wrap(d, hook.upper(), hf, 900)[:3]
+            lines = wrap(d, hook.upper(), hf, SAFE_TEXT_W - 60)[:3]
             lh = 62
             bh = lh * len(lines) + 34
             top = seam_y - bh // 2
@@ -578,8 +711,8 @@ def caption_frames(words, hook, seam_y, cap_y, dur, outdir):
         space = d.textlength(" ", font=cf_)
         total = sum(widths) + space * (len(text) - 1)
         scale_font = cf_
-        if total > 1000:
-            scale_font = font(int(84 * 1000 / total))
+        if total > SAFE_TEXT_W:
+            scale_font = font(int(84 * SAFE_TEXT_W / total))
             widths = [d.textlength(x, font=scale_font) for x in text]
             space = d.textlength(" ", font=scale_font)
             total = sum(widths) + space * (len(text) - 1)
@@ -640,17 +773,25 @@ def fetch_section(info, a, b, work, cookies, q):
             "--merge-output-format", "mp4/mkv", "-o", str(work / "src.%(ext)s"), info["webpage_url"]])
     src = next((p for p in work.glob("src.*") if p.suffix in (".mp4", ".mkv", ".webm")), None)
     if not src:
-        raise RuntimeError("section download failed: " + r.stderr[-300:])
+        raise RuntimeError(explain("section download failed: " + r.stderr[-300:].strip()))
     return src
 
 
 def render_one(rd, info, c, n, cookies, keep, layout, quality="standard"):
+    work = rd / f"work_{n:02d}"
+    try:
+        return _render_one(rd, info, c, n, cookies, layout, quality, work)
+    finally:  # downloaded sections + caption frames go even when the render fails (unless --keep)
+        if not keep:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def _render_one(rd, info, c, n, cookies, layout, quality, work):
     q = QUALITY[quality]
     sf = ":flags=lanczos"  # sharper than the default bicubic when enlarging a small facecam
     sharp = ",unsharp=5:5:0.6:5:5:0" if q["sharpen"] else ""
     clips = rd / "clips"
     clips.mkdir(exist_ok=True)
-    work = rd / f"work_{n:02d}"
     work.mkdir(exist_ok=True)
     pad = 3.0
     a, b = max(0, c["_s"] - pad), c["_e"] + 1
@@ -682,6 +823,11 @@ def render_one(rd, info, c, n, cookies, keep, layout, quality="standard"):
         if gw > W:
             gw, gh = W, W * bot_h / 1080
         gx, gy = (W - gw) / 2, (H - gh) / 2
+        # keep the cam window itself out of the gameplay panel when there's room to slide the crop
+        if L < gx < L + cw and L + cw + gw <= W:
+            gx = L + cw
+        elif L < gx + gw < L + cw and L - gw >= 0:
+            gx = L - gw
         vf = (f"[0:v]fps=30,split[a][b];"
               f"[a]crop={cw}:{ch}:{L}:{T},scale=1080:{top_h}:force_original_aspect_ratio=increase{sf},"
               f"crop=1080:{top_h}{sharp}[top];"
@@ -698,7 +844,7 @@ def render_one(rd, info, c, n, cookies, keep, layout, quality="standard"):
               f"boxblur=30:3,eq=brightness=-0.15[bg];[b]scale=1080:-2{sf}[fg];[bg][fg]overlay=0:(H-h)/2[base]")
         seam, cap_y = 560, 1420
     lst = caption_frames(words, c.get("hook") or c.get("title"), seam, cap_y, dur, work / "cap")
-    out = clips / f"clip_{n:02d}_{slug(c.get('title') or c.get('hook'), 40)}.mp4"
+    out = clips / f"clip_{n:02d}_{slug(c.get('title') or c.get('hook'), 40, whole_words=True)}.mp4"
     r = run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{ss:.3f}", "-t", f"{dur:.3f}", "-i", str(src),
              "-f", "concat", "-safe", "0", "-i", str(lst), "-filter_complex",
              vf + ";[1:v]format=rgba[ov];[base][ov]overlay=0:0:eof_action=repeat:format=auto,format=yuv420p[v];"
@@ -706,16 +852,22 @@ def render_one(rd, info, c, n, cookies, keep, layout, quality="standard"):
              "-map", "[v]", "-map", "[aout]", "-c:v", "libx264", "-preset", q["preset"], "-crf", str(q["crf"]),
              "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)])
     if r.returncode != 0:
+        out.unlink(missing_ok=True)  # don't leave a broken, half-written mp4 that looks like a clip
         raise RuntimeError("render failed: " + r.stderr[-500:])
-    tags = " ".join(c.get("hashtags") or [])
+    # cover image for Shorts / TikTok / Reels (hook visible, first caption on screen); also used to check framing
+    run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{min(1.5, dur / 3):.2f}", "-i", str(out),
+         "-frames:v", "1", "-q:v", "2", str(out.with_suffix(".jpg"))])
+    tags = hashtags(c.get("hashtags"))
     source = info["webpage_url"] if info["platform"] != "local" else Path(info["path"]).name
     post = (f"TITLE: {c.get('title', '')}\n\nCAPTION:\n{c.get('caption', '')}\n\n{tags}\n\n"
             f"Source: {info['streamer']}, {source} at {hms(c['_s'])}\n"
             f"Category: {c.get('category')}  Score: {c.get('score')}  Layout: {fc['mode']}  "
             f"Quality: {quality} (source {W}x{H})\n")
     out.with_suffix(".txt").write_text(post)
-    if not keep:
-        shutil.rmtree(work, ignore_errors=True)
+    # a re-render with a new title writes a new file name: remove the previous version of this clip number
+    for old in clips.glob(f"clip_{n:02d}_*"):
+        if old.stem != out.stem and old.suffix in (".mp4", ".jpg", ".txt"):
+            old.unlink(missing_ok=True)
     return out, fc["mode"]
 
 
@@ -731,7 +883,8 @@ def cmd_render(a):
     for n, c in enumerate(picks, 1):
         try:
             out, mode = render_one(rd, info, c, n, a.cookies or info.get("cookies"), a.keep, a.layout, a.quality)
-            made.append({"file": str(out), "title": c.get("title"), "score": c.get("score"), "layout": mode,
+            made.append({"file": str(out), "cover": str(out.with_suffix(".jpg")), "title": c.get("title"),
+                         "score": c.get("score"), "layout": mode,
                          "at": hms(c["_s"]), "len": round(c["_e"] - c["_s"])})
             log(f"  clip {n}: {c.get('title')}  ({hms(c['_s'])}, {round(c['_e'] - c['_s'])}s, {mode}) -> {out.name}")
         except Exception as e:
