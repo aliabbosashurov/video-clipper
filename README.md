@@ -113,7 +113,8 @@ Something not working? See [Troubleshooting](docs/troubleshooting.md).
 ## Documentation
 
 - [Installation](docs/installation.md): requirements, setup options, installing without Homebrew, configuration, updating
-- [Usage](docs/usage.md): example requests, editing clips, layouts, output files, command reference
+- [Usage](docs/usage.md): example requests, editing clips, layouts, quality, output files
+- [Command reference](docs/commands.md): every command and option in one place, as tables
 - [Troubleshooting](docs/troubleshooting.md): common problems and fixes, known limits
 
 ## Responsible use
