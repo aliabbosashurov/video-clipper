@@ -72,6 +72,8 @@ layout, burns in the hook + word-by-word captions, normalises loudness, and writ
 timestamp) + `summary.json`. Temporary files are removed even if a clip fails. Re-rendering replaces the
 previous files of the same clip number (also when its title changed), so there's nothing to delete first.
 Captions and the hook stay inside the area TikTok / Reels / Shorts leave free of their own buttons and text.
+Render makes sure every clip has picture from its first frame (it re-downloads with a longer lead-in when
+a section's first keyframe comes late). If it logs `starting N s later than picked`, tell the user.
 
 Layouts (auto-detected per clip, from faces found across the clip):
 - `facecam`: a small face inside a box with fixed edges (any position) over moving content (streams,

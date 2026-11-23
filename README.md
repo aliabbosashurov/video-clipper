@@ -120,6 +120,7 @@ Something not working? See [Troubleshooting](docs/troubleshooting.md).
 - [Usage](docs/usage.md): example requests, editing clips, layouts, quality, output files
 - [Command reference](docs/commands.md): every command and option in one place, as tables
 - [Troubleshooting](docs/troubleshooting.md): common problems and fixes, known limits
+- [Development](docs/development.md): how the code is organised, where a new feature goes, running the tests
 
 ## Responsible use
 
