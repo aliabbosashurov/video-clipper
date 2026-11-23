@@ -25,6 +25,24 @@ CFG = json.loads((DATA / "config.json").read_text()) if (DATA / "config.json").e
 RUNS = Path(os.environ.get("VIDEO_CLIPS_DIR") or CFG.get("clips_dir") or Path.home() / "Video-Clips").expanduser()
 YTDLP = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--quiet", "--no-progress"]
 LAYOUTS = ("auto", "facecam", "cam", "full")
+# render --quality: source resolution to download (None = best there is) and how hard to encode.
+# Output is always 1080x1920; a bigger source means less enlarging of a small facecam.
+QUALITY = {
+    "fast":     {"height": 720,  "preset": "veryfast", "crf": 22, "sharpen": False},
+    "standard": {"height": 1080, "preset": "veryfast", "crf": 20, "sharpen": False},
+    "high":     {"height": 1440, "preset": "medium",   "crf": 18, "sharpen": True},
+    "max":      {"height": None, "preset": "medium",   "crf": 18, "sharpen": True},  # differs only on 4K sources
+}
+QUALITY_ALIASES = {"720p": "fast", "720": "fast", "1080p": "standard", "1080": "standard", "default": "standard",
+                   "1440p": "high", "1440": "high", "2k": "high", "4k": "max", "2160p": "max", "2160": "max",
+                   "best": "max"}
+
+
+def quality_arg(v):
+    v = QUALITY_ALIASES.get(v.lower(), v.lower())
+    if v not in QUALITY:
+        raise argparse.ArgumentTypeError(f"use one of: {', '.join(QUALITY)} (or 720p, 1080p, 1440p, 4k)")
+    return v
 
 
 # ---------------------------------------------------------------- helpers
@@ -372,6 +390,19 @@ def select(rd, top, min_score, max_len):
 
 
 def find_facecam(video, W, H):
+    """Detection runs on frames scaled to at most 1920 wide (fast, same thresholds for 1440p/4K
+    sources); the box and face come back in source pixels."""
+    s = min(1.0, 1920 / W)
+    res = _find_facecam(video, int(W * s), int(H * s), s)
+    if "face" in res:
+        res["face"] = [v / s for v in res["face"]]
+    if "box" in res:
+        L, T, cw, ch = (int(v / s) for v in res["box"])
+        res["box"] = [L, T, min(cw, W - L), min(ch, H - T)]
+    return res
+
+
+def _find_facecam(video, W, H, scale=1.0):
     """Sample frames, find a face that sits in the same spot (anywhere in the frame).
     facecam: the face is inside a box with static edges AND the rest of the frame moves (gameplay,
     screen share) -> overlay. cam: a camera shot of a person (podcast, interview, vlog). full: no steady face."""
@@ -393,6 +424,8 @@ def find_facecam(video, W, H):
         ok, fr = cap.read()
         if not ok:
             continue
+        if scale < 1:
+            fr = cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA)
         g = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
         smalls.append(cv2.resize(g, (160, 90), interpolation=cv2.INTER_AREA).astype(np.float32))
         grads.append((np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0)), np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1))))
@@ -590,7 +623,7 @@ def clip_words(src, ss, dur, work, lang):
     return words
 
 
-def fetch_section(info, a, b, work, cookies):
+def fetch_section(info, a, b, work, cookies, q):
     """Only the minutes the clip needs: cut from the local file, or download that section."""
     if info.get("path"):
         out = work / "src.mp4"
@@ -600,16 +633,21 @@ def fetch_section(info, a, b, work, cookies):
         if r.returncode != 0:
             raise RuntimeError("section cut failed: " + r.stderr[-300:])
         return out
-    r = run(YTDLP + cookie_args(cookies) + ["--no-playlist", "-f",
-            "bv*[height<=1080][fps<=60]+ba/b[height<=1080]/bv*+ba/b", "--download-sections", f"*{a:.1f}-{b:.1f}",
-            "--merge-output-format", "mp4", "-o", str(work / "src.%(ext)s"), info["webpage_url"]])
+    h = q["height"]
+    fmt = f"bv*[height<={h}][fps<=60]+ba/b[height<={h}]/bv*+ba/b" if h else "bv*[fps<=60]+ba/bv*+ba/b"
+    # above 1080p YouTube mostly serves VP9/AV1, which may not fit in mp4: fall back to mkv
+    r = run(YTDLP + cookie_args(cookies) + ["--no-playlist", "-f", fmt, "--download-sections", f"*{a:.1f}-{b:.1f}",
+            "--merge-output-format", "mp4/mkv", "-o", str(work / "src.%(ext)s"), info["webpage_url"]])
     src = next((p for p in work.glob("src.*") if p.suffix in (".mp4", ".mkv", ".webm")), None)
     if not src:
         raise RuntimeError("section download failed: " + r.stderr[-300:])
     return src
 
 
-def render_one(rd, info, c, n, cookies, keep, layout):
+def render_one(rd, info, c, n, cookies, keep, layout, quality="standard"):
+    q = QUALITY[quality]
+    sf = ":flags=lanczos"  # sharper than the default bicubic when enlarging a small facecam
+    sharp = ",unsharp=5:5:0.6:5:5:0" if q["sharpen"] else ""
     clips = rd / "clips"
     clips.mkdir(exist_ok=True)
     work = rd / f"work_{n:02d}"
@@ -617,7 +655,7 @@ def render_one(rd, info, c, n, cookies, keep, layout):
     pad = 3.0
     a, b = max(0, c["_s"] - pad), c["_e"] + 1
     src = next((p for p in work.glob("src.*") if p.suffix in (".mp4", ".mkv", ".webm")), None) \
-        or fetch_section(info, a, b, work, cookies)
+        or fetch_section(info, a, b, work, cookies, q)
     pr = json.loads(run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                          "stream=width,height:format=duration", "-of", "json", str(src)]).stdout)
     W, H = pr["streams"][0]["width"], pr["streams"][0]["height"]
@@ -645,18 +683,19 @@ def render_one(rd, info, c, n, cookies, keep, layout):
             gw, gh = W, W * bot_h / 1080
         gx, gy = (W - gw) / 2, (H - gh) / 2
         vf = (f"[0:v]fps=30,split[a][b];"
-              f"[a]crop={cw}:{ch}:{L}:{T},scale=1080:{top_h}:force_original_aspect_ratio=increase,crop=1080:{top_h}[top];"
-              f"[b]crop={int(gw)}:{int(gh)}:{int(gx)}:{int(gy)},scale=1080:{bot_h}[bot];[top][bot]vstack[base]")
+              f"[a]crop={cw}:{ch}:{L}:{T},scale=1080:{top_h}:force_original_aspect_ratio=increase{sf},"
+              f"crop=1080:{top_h}{sharp}[top];"
+              f"[b]crop={int(gw)}:{int(gh)}:{int(gx)}:{int(gy)},scale=1080:{bot_h}{sf}[bot];[top][bot]vstack[base]")
         seam, cap_y = top_h, top_h + int(bot_h * 0.58)
     elif fc["mode"] == "cam":  # 9:16 crop centred on the main face
         fx, fy, fw, fh = fc["face"]
         cw = min(W, H * 9 / 16)
         cx = min(max(0, fx + fw / 2 - cw / 2), W - cw)
-        vf = f"[0:v]fps=30,crop={int(cw)}:{H}:{int(cx)}:0,scale=1080:1920[base]"
+        vf = f"[0:v]fps=30,crop={int(cw)}:{H}:{int(cx)}:0,scale=1080:1920{sf}{sharp}[base]"
         seam, cap_y = 300, 1380
     else:  # full frame in the middle over a blurred fill
         vf = ("[0:v]fps=30,split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-              "boxblur=30:3,eq=brightness=-0.15[bg];[b]scale=1080:-2[fg];[bg][fg]overlay=0:(H-h)/2[base]")
+              f"boxblur=30:3,eq=brightness=-0.15[bg];[b]scale=1080:-2{sf}[fg];[bg][fg]overlay=0:(H-h)/2[base]")
         seam, cap_y = 560, 1420
     lst = caption_frames(words, c.get("hook") or c.get("title"), seam, cap_y, dur, work / "cap")
     out = clips / f"clip_{n:02d}_{slug(c.get('title') or c.get('hook'), 40)}.mp4"
@@ -664,7 +703,7 @@ def render_one(rd, info, c, n, cookies, keep, layout):
              "-f", "concat", "-safe", "0", "-i", str(lst), "-filter_complex",
              vf + ";[1:v]format=rgba[ov];[base][ov]overlay=0:0:eof_action=repeat:format=auto,format=yuv420p[v];"
              "[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]",
-             "-map", "[v]", "-map", "[aout]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+             "-map", "[v]", "-map", "[aout]", "-c:v", "libx264", "-preset", q["preset"], "-crf", str(q["crf"]),
              "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)])
     if r.returncode != 0:
         raise RuntimeError("render failed: " + r.stderr[-500:])
@@ -672,7 +711,8 @@ def render_one(rd, info, c, n, cookies, keep, layout):
     source = info["webpage_url"] if info["platform"] != "local" else Path(info["path"]).name
     post = (f"TITLE: {c.get('title', '')}\n\nCAPTION:\n{c.get('caption', '')}\n\n{tags}\n\n"
             f"Source: {info['streamer']}, {source} at {hms(c['_s'])}\n"
-            f"Category: {c.get('category')}  Score: {c.get('score')}  Layout: {fc['mode']}\n")
+            f"Category: {c.get('category')}  Score: {c.get('score')}  Layout: {fc['mode']}  "
+            f"Quality: {quality} (source {W}x{H})\n")
     out.with_suffix(".txt").write_text(post)
     if not keep:
         shutil.rmtree(work, ignore_errors=True)
@@ -686,11 +726,11 @@ def cmd_render(a):
         sys.exit(f"The source file is gone: {info['path']}")
     t0 = time.time()
     picks, total = select(rd, a.top, a.min_score, a.max_len)
-    log(f"[{info['streamer']}] {total} possible moments -> keeping best {len(picks)}")
+    log(f"[{info['streamer']}] {total} possible moments -> keeping best {len(picks)} (quality: {a.quality})")
     made = []
     for n, c in enumerate(picks, 1):
         try:
-            out, mode = render_one(rd, info, c, n, a.cookies or info.get("cookies"), a.keep, a.layout)
+            out, mode = render_one(rd, info, c, n, a.cookies or info.get("cookies"), a.keep, a.layout, a.quality)
             made.append({"file": str(out), "title": c.get("title"), "score": c.get("score"), "layout": mode,
                          "at": hms(c["_s"]), "len": round(c["_e"] - c["_s"])})
             log(f"  clip {n}: {c.get('title')}  ({hms(c['_s'])}, {round(c['_e'] - c['_s'])}s, {mode}) -> {out.name}")
@@ -730,6 +770,9 @@ def main():
     r.add_argument("--max-len", type=float, default=75, help="longest clip in seconds")
     r.add_argument("--layout", choices=LAYOUTS, default="auto",
                    help="auto, facecam (cam box on top), cam (9:16 crop on the speaker), full (whole frame on blur)")
+    r.add_argument("--quality", type=quality_arg, default="standard", metavar="LEVEL",
+                   help="fast (720p), standard (1080p, default), high (1440p), max (best available, up to 4K). "
+                        "Higher = sharper facecam but slower downloads and renders. Also accepts 720p/1080p/1440p/4k")
     r.add_argument("--cookies"); r.add_argument("--keep", action="store_true", help="keep downloaded source sections")
     a = p.parse_args()
     if not (DATA / ".ready").exists():
