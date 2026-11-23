@@ -4,7 +4,7 @@
 
 # VIDEO-CLIPPER
 
-An intelligent video-clipping skill that automates discovery, highlight selection, editing and post preparation.
+An intelligent video-clipping skill that automates discovery, highlight selection, <br/> editing and post preparation.
 
 **Open source** · Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp), [FFmpeg](https://ffmpeg.org) and [OpenCV](https://opencv.org)
 
