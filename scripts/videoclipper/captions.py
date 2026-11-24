@@ -15,6 +15,7 @@ FONTS = [os.environ.get("VIDEO_CLIPPER_FONT"), CFG.get("font"),
 # like / comment / share buttons down the right side. Keep text inside this box (1080x1920 frame).
 SAFE_MAX_Y = 1400   # caption line centre stays above the bottom description area
 SAFE_TEXT_W = 840   # 120..960: clear of the button column on the right
+HOLD_MAX = 0.6      # a word stays lit at most this long, so a pause shows no caption instead of a frozen word
 
 
 def font(size: int):
@@ -77,7 +78,7 @@ def caption_frames(words: list[dict], hook: str | None, seam_y: int, cap_y: int,
     states = []  # (t0, t1, group, active_idx)
     for g in groups:
         for i, w in enumerate(g):
-            t1 = g[i + 1]["s"] if i + 1 < len(g) else w["e"]
+            t1 = min(g[i + 1]["s"] if i + 1 < len(g) else w["e"], w["s"] + HOLD_MAX)
             states.append((w["s"], max(t1, w["s"] + 0.08), g, i))
     timeline, t, k = [], 0.0, 0
     blank = outdir / "blank.png"
