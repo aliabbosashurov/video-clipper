@@ -1,7 +1,7 @@
 {
   "name": "video-clipper",
   "displayName": "Video Clipper",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Turn long videos (podcasts, interviews, streams, tutorials, vlogs) into ready-to-post vertical clips with hook titles, word-by-word captions, and post captions + hashtags. Links or local files. macOS only.",
   "author": { "name": "Aliabbos Ashurov", "url": "https://github.com/aliabbosashurov" },
   "homepage": "https://github.com/aliabbosashurov/video-clipper",
