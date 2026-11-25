@@ -25,6 +25,9 @@ something is missing and Homebrew isn't installed, relay the hint lines; don't g
 
 - Non-English videos: `bash "$S/scripts/setup.sh" --multilingual`.
 - Slow Mac or low disk: `--model base.en` (faster, rougher transcript). Better accuracy: `--model medium.en`.
+- Setup without `--model` puts the English model back to `small.en` in the config. If the user chose another
+  one, pass the same `--model` again (`~/.video-clipper/config.json` shows what's set). A setup that ends
+  with `[MISSING]` removes the READY mark, so the next command says "Not set up yet": fix it and re-run.
 - Re-run setup if downloads start failing: it updates yt-dlp.
 
 ## 1+2. Get the video ready ("prep")
@@ -46,7 +49,10 @@ something is missing and Homebrew isn't installed, relay the hint lines; don't g
   for long or multiple videos and tell the user it's running.
 
 Local files are only read, never moved, changed or deleted. Prep writes a run folder under `~/Video-Clips/`
-(or `$VIDEO_CLIPS_DIR`) with `chunks/chunk_NN.md` transcripts and prints its path.
+(or `$VIDEO_CLIPS_DIR`) with `chunks/chunk_NN.md` transcripts and prints its path. `manifest.json` in it records
+the source, the Whisper model, the settings and the timings. If prep says `already prepped ... other settings`,
+the run was made with another model, language or chunk size: tell the user, and only add `--force` if they want
+it redone (chunk numbers can change, so its `picks/` would have to be redone too).
 
 ## 3. Pick the moments (you do this)
 
@@ -56,8 +62,14 @@ Read `$S/references/picking.md` first, every time. Then for each run folder:
 2. For each chunk write `picks/chunk_NN.json` (same NN): a JSON array of moments as described in
    picking.md, or `[]` if nothing qualifies. Always write the file, even when empty: that's the progress record.
 3. `status <run>` lists chunks that still have no picks file in `chunks_left`. Keep going until it's empty.
-   It also lists `bad_picks` (invalid JSON, or entries missing `start` / `end` / `score`): fix them before
-   rendering. Render skips a file it can't read and any single broken entry (it says which).
+   It also lists `bad_picks`: invalid JSON, entries missing `start` / `end` / `score`, a `start` outside the
+   chunk's own time range (a moment belongs to the chunk where it STARTS, and the lookahead at the end of
+   a chunk is context only), or a file for a chunk that doesn't exist. Fix them before rendering. Render skips
+   a file it can't read and any single broken entry (it says which).
+   `stale_picks` are picks files older than their chunk (prep was run again) and `changed_chunks` are chunk
+   files that no longer match what prep wrote: redo the picks for those chunks.
+   Every entry gets an ID from its position: `c07-2` is the 2nd entry of `picks/chunk_07.json`. Clips and
+   `summary.json` carry it, so keep the order of entries in a file stable once clips were rendered from it.
 
 Several videos: give each one its own subagent (Agent tool, general-purpose) with the run folder path, the
 path to `$S/references/picking.md`, and the instruction "read picking.md, then do step 3 of
@@ -69,7 +81,8 @@ $S/SKILL.md for this run folder". Up to 4 at once.
 overlaps, snaps to sentence edges, downloads (or cuts from the local file) only those minutes, chooses a
 layout, burns in the hook + word-by-word captions, normalises loudness, and writes
 `clips/clip_NN_<title>.mp4` + `.jpg` (cover image) + `.txt` (title, caption, hashtags, source +
-timestamp) + `summary.json`. Temporary files are removed even if a clip fails. Re-rendering replaces the
+timestamp, pick ID, Whisper model, version) + `summary.json` (also each clip's pick ID and chunk, the models,
+the version and the render settings; the same goes into `manifest.json`). Temporary files are removed even if a clip fails. Re-rendering replaces the
 previous files of the same clip number (also when its title changed), so there's nothing to delete first.
 Captions and the hook stay inside the area TikTok / Reels / Shorts leave free of their own buttons and text.
 Render makes sure every clip has picture from its first frame (it re-downloads with a longer lead-in when
@@ -86,7 +99,7 @@ Layouts (auto-detected per clip, from faces found across the clip):
 Force one for the whole run with `--layout cam|facecam|full`, e.g. `--layout full` for tutorials where
 the screen matters more than the face. If fewer clips came out than asked because scores were low, say so
 and offer `--min-score 6` rather than quietly lowering the bar. Pass the same `--cookies` if prep needed
-them (they're remembered in `stream.json`).
+them (they're remembered in `manifest.json`).
 
 Quality (`--quality`): how sharp the source is before it's cut to 1080x1920. Output size is always the same;
 a bigger source mainly sharpens a small facecam. Use `standard` unless the user asks otherwise, and map

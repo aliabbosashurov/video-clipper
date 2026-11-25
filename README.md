@@ -64,8 +64,8 @@ For every video, 3 clips (or as many as you ask for), each with:
 ## How it works
 
 1. **Listen.** It downloads only the audio (or reads your file) and transcribes it on your Mac.
-2. **Pick.** Claude reads the cleaned-up transcript (silence and music markers removed, with overlapping
-   pieces so no moment is cut in half) and picks the moments worth sharing: stories, insights, hot takes,
+2. **Pick.** Claude reads the cleaned-up transcript (silence and music markers removed, in pieces that
+   each show how a moment near the end finishes, so none is cut in half) and picks the moments worth sharing: stories, insights, hot takes,
    funny bits and reactions.
 3. **Cut.** It downloads only those few minutes of video and renders the clips.
 

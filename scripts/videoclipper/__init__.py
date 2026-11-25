@@ -15,6 +15,7 @@ Modules, by responsibility:
     signals     loud moments in the audio, live-chat spikes
     transcribe  Whisper, transcript cleanup, word timings for captions
     chunks      transcript pieces with markers, for the picker
+    manifest    manifest.json: what a run folder is, how it was made, with which model and version
     picks       reading, checking and ranking the picker's moments
     layout      facecam / cam / full detection and the ffmpeg framing for each
     captions    hook box + word-by-word caption overlay (inside the platform safe zone)

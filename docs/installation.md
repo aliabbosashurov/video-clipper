@@ -79,6 +79,9 @@ It's safe to run again at any time. Re-running also updates the downloader, whic
 
 Models ending in `.en` are English-only.
 
+Running setup **without** `--model` sets the English model back to `small.en`, so pass the same `--model` every
+time if you use another one. `~/.video-clipper/config.json` shows what is currently set.
+
 Ask Claude (*"set up the video clipper with the multilingual model"*), or run it yourself:
 
 ```bash

@@ -61,7 +61,7 @@ def local_file(src: str) -> Path | None:
 
 
 def source_info(src: str, cookies: str | None, name: str | None) -> dict:
-    """Metadata for a link (via yt-dlp) or a local video file. Saved as stream.json in the run folder."""
+    """Metadata for a link (via yt-dlp) or a local video file. Saved as `source` in the run folder's manifest.json."""
     p = local_file(src)
     if p:
         dur = probe_duration(p)

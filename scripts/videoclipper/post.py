@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .manifest import tool_version
 from .util import hms
 
 
@@ -22,10 +23,11 @@ def hashtags(tags) -> str:
     return " ".join(out)
 
 
-def post_text(c: dict, info: dict, mode: str, quality: str, W: int, H: int) -> str:
+def post_text(c: dict, info: dict, mode: str, quality: str, W: int, H: int, model: str | None = None) -> str:
     tags = hashtags(c.get("hashtags"))
     source = info["webpage_url"] if info["platform"] != "local" else Path(info["path"]).name
     return (f"TITLE: {c.get('title', '')}\n\nCAPTION:\n{c.get('caption', '')}\n\n{tags}\n\n"
             f"Source: {info['streamer']}, {source} at {hms(c['_s'])}\n"
             f"Category: {c.get('category')}  Score: {c.get('score')}  Layout: {mode}  "
-            f"Quality: {quality} (source {W}x{H})\n")
+            f"Quality: {quality} (source {W}x{H})\n"
+            f"Pick: {c.get('_id', '?')}  Whisper: {model or '?'}  video-clipper {tool_version()}\n")

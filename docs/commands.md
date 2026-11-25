@@ -12,7 +12,7 @@ you want in plain words. In the Terminal, run them as `vclip <command> [options]
 |---|---|
 | `search "<query>"` | Searches YouTube for long videos to clip |
 | `prep <link or file> [...]` | Downloads the audio (or reads your file), transcribes it and splits the transcript into chunks for Claude |
-| `status <run folder>` | Shows how many chunks are picked and which are still left |
+| `status <run folder>` | Shows how many chunks are picked, which are still left, which picks are broken, outside their chunk or outdated, and which speech model prepared the run |
 | `render <run folder>` | Makes the clips from the picked moments |
 
 ## `search` options
@@ -33,7 +33,7 @@ you want in plain words. In the Terminal, run them as `vclip <command> [options]
 | `--cookies` | `chrome`, `safari`, `firefox`, or a `cookies.txt` path | none | Uses your browser login for age-restricted or "sign in" videos |
 | `--jobs` | number | `2` | How many videos to prepare at once |
 | `--chunk-min` | number | `12` | Minutes of transcript per chunk |
-| `--force` | (no value) | off | Redoes a video that was already prepared |
+| `--force` | (no value) | off | Redoes a video that was already prepared (without it, prep only warns when the speech model, language or chunk size changed) |
 
 ## `render` options
 

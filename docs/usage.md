@@ -71,9 +71,9 @@ Each video gets its own folder in `~/Video-Clips/`:
 │   ├── clip_01_he-got-fired-the-day-his-app-went-1.jpg   ← cover image (thumbnail)
 │   ├── clip_01_he-got-fired-the-day-his-app-went-1.txt   ← title, caption, hashtags to paste
 │   └── summary.json
-├── chunks/     the transcript, in 12-minute pieces
+├── chunks/     the transcript, in 12-minute pieces (each ends with a short look at the next one)
 ├── picks/      the moments Claude chose (one file per piece)
-└── stream.json, transcript.json, signals.json, timing.json
+└── manifest.json, transcript.json, signals.json
 ```
 
 Example `.txt` file:
@@ -87,8 +87,13 @@ Refreshing the charts while your boss walks in 😭 Would you have quit first?
 #podcast #startup #entrepreneur #storytime
 
 Source: My Podcast, https://www.youtube.com/watch?v=... at 00:41:12
-Category: story  Score: 8.5  Layout: cam
+Category: story  Score: 8.5  Layout: cam  Quality: standard (source 1920x1080)
+Pick: c07-2  Whisper: medium.en  video-clipper 1.0.4
 ```
+
+The last line says which moment it came from (`c07-2` = 2nd entry in `picks/chunk_07.json`), which speech model
+timed the captions and which version made the clip. `manifest.json` in the run folder keeps the same facts
+for the whole video: the source, the speech model, the settings, the timings and the last render.
 
 Your original files are never modified. Temporary audio and video pieces are deleted automatically.
 
@@ -132,7 +137,7 @@ Downloads the audio, transcribes it and splits the transcript into pieces. A sou
 
 ### `status RUN`
 
-Shows how many pieces have been picked and which are still left.
+Shows how many pieces have been picked and which are still left. It also warns about picks that are broken, start outside their piece, are older than their piece (prep was run again), or whose piece was edited after prep.
 
 ### `render RUN`
 

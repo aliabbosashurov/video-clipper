@@ -11,14 +11,14 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import layout
+from . import layout, manifest
 from .captions import caption_frames
 from .config import QUALITY, Quality
 from .media import probe_video, video_start
 from .picks import select
 from .post import post_text
 from .sources import fetch_section
-from .transcribe import clip_words
+from .transcribe import clip_words, model_label
 from .util import hms, log, run, slug
 
 
@@ -35,7 +35,8 @@ class RenderOptions:
 
 def render_run(rd: Path, opts: RenderOptions) -> dict:
     """Render the best picks of a run folder; writes clips/ + summary.json and returns the summary."""
-    info = json.loads((rd / "stream.json").read_text())
+    mf = manifest.require(rd)
+    info = mf["source"]
     if info.get("path") and not Path(info["path"]).is_file():
         raise SystemExit(f"The source file is gone: {info['path']}")
     t0 = time.time()
@@ -48,21 +49,38 @@ def render_run(rd: Path, opts: RenderOptions) -> dict:
                                     opts.quality)
             made.append({"file": str(out), "cover": str(out.with_suffix(".jpg")), "title": c.get("title"),
                          "score": c.get("score"), "layout": mode,
-                         "at": hms(c["_s"]), "len": round(c["_e"] - c["_s"])})
+                         "at": hms(c["_s"]), "len": round(c["_e"] - c["_s"]),
+                         "pick": c["_id"], "chunk": c["_chunk"], "category": c.get("category")})
             log(f"  clip {n}: {c.get('title')}  ({hms(c['_s'])}, {round(c['_e'] - c['_s'])}s, {mode}) -> {out.name}")
         except Exception as e:
             log(f"  clip {n} FAILED: {e}")
-    tm = json.loads((rd / "timing.json").read_text()) if (rd / "timing.json").exists() else {}
+    tm = mf.get("timing", {})
     tm["render_sec"] = round(time.time() - t0)
     tm["total_sec"] = round(time.time() - tm.get("prep_started", t0))
-    (rd / "timing.json").write_text(json.dumps(tm, indent=1))
+    settings = {"top": opts.top, "min_score": opts.min_score, "max_len": opts.max_len, "layout": opts.layout,
+                "quality": opts.quality}
+    caption_model = _caption_model(info)
+    version = manifest.tool_version()
+    manifest.update(rd, timing=tm, render={"finished": manifest.now(), "tool_version": version,
+                                           "caption_model": caption_model, **settings,
+                                           "picks": [m["pick"] for m in made]})
     (rd / "clips").mkdir(exist_ok=True)
     summary = {"video": info["title"], "creator": info["streamer"], "length": hms(info.get("duration") or 0),
-               "moments_found": total, "clips": made, "total_time": hms(tm["total_sec"])}
+               "moments_found": total, "clips": made, "total_time": hms(tm["total_sec"]),
+               "prep_model": mf["prep"].get("whisper_model"), "caption_model": caption_model,
+               "tool_version": version, "settings": settings}
     (rd / "clips" / "summary.json").write_text(json.dumps(summary, indent=1))
     log(f"\n{info['streamer']}: {summary['length']} video -> {total} moments -> {len(made)} clips "
         f"(total {summary['total_time']}) -> {rd / 'clips'}")
     return summary
+
+
+def _caption_model(info: dict) -> str | None:
+    """The Whisper model that times this run's captions, for the records (None if none is configured)."""
+    try:
+        return model_label(info.get("lang") or "en")
+    except RuntimeError:
+        return None
 
 
 def render_clip(rd: Path, info: dict, c: dict, n: int, cookies: str | None, keep: bool, forced_layout: str,
@@ -100,7 +118,7 @@ def _render_clip(rd: Path, info: dict, c: dict, n: int, cookies: str | None, for
     # cover image for Shorts / TikTok / Reels (hook visible, first caption on screen); also used to check framing
     run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{min(1.5, dur / 3):.2f}", "-i", str(out),
          "-frames:v", "1", "-q:v", "2", str(out.with_suffix(".jpg"))])
-    out.with_suffix(".txt").write_text(post_text(c, info, fc["mode"], quality, W, H))
+    out.with_suffix(".txt").write_text(post_text(c, info, fc["mode"], quality, W, H, _caption_model(info)))
     # a re-render with a new title writes a new file name: remove the previous version of this clip number
     for old in clips.glob(f"clip_{n:02d}_*"):
         if old.stem != out.stem and old.suffix in (".mp4", ".jpg", ".txt"):

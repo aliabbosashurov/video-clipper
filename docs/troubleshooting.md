@@ -9,6 +9,7 @@
 | `Not set up yet` | Say *"set up the video clipper"* in Claude Code (or run `scripts/setup.sh`) and wait for `READY`. |
 | Setup shows `[MISSING]` items | Install each listed item (the line says how), then run setup again. Without Homebrew, see [Installing without Homebrew](installation.md#installing-without-homebrew). |
 | Claude doesn't know the skill | Plugin: check `claude plugin list` shows `video-clipper` as enabled. Plain skill: check the folder is at `~/.claude/skills/video-clipper` with `SKILL.md` inside. Then restart Claude Code. |
+| Setup ended with `[MISSING]` and now every command says `Not set up yet` | A setup that doesn't finish removes the READY mark. Install the missing item and run setup again, with the same `--model` you use: a plain run resets the English model to `small.en`. |
 | Setup runs again after every plugin update | It shouldn't need to download anything: models are kept in `~/.video-clipper`. If you moved them, set `VIDEO_CLIPPER_HOME` to the new folder. |
 | Captions use a plain font | The font download failed. Run setup again, or set `VIDEO_CLIPPER_FONT` to a `.ttf` file. |
 
@@ -30,6 +31,11 @@ tells you in plain words.
 | problem | fix |
 |---|---|
 | "needs a multilingual Whisper model" | Run setup with `--multilingual`. |
+| Prep says `already prepped ... other settings` | That video was prepped with another speech model, language or chunk size (the message lists which). Nothing was redone. Add `--force` to prep it again; chunk numbers can change, so its `picks/` would need redoing. |
+| `status` lists a pick under `bad_picks` as "outside chunk N" | A moment belongs to the chunk where it starts, and the pick's `start` is outside that chunk's time range (usually a timestamp copied from another chunk). Render skips it; ask Claude to fix the entry or move it to the right `picks/chunk_NN.json`. |
+| `status` lists `stale_picks` or `changed_chunks` | The chunk text was rewritten (prep run again with `--force`) or edited after the picks were made. Ask Claude to pick those chunks again. |
+| `render` or `status` says "has not been prepped" | The folder has no finished `manifest.json`: run `prep` for the video. |
+| A line in a chunk is marked `LOW-CONF` | Whisper was unsure of those words (lyrics, crosstalk, game or music noise). Claude is told not to pick a moment because of such lines. |
 | The transcript is gibberish | The language is wrong. Tell Claude the video's language, or ask it to detect it (`--lang auto --force`). |
 | A clip starts with a black screen for a few seconds, and its captions run ahead of the speech | Fixed in 1.0.3: render now checks that the picture starts on the first frame and cuts the caption audio at the exact time. Clips made with an older version can have both problems (mostly at `high` / `max` quality): ask Claude to render them again. |
 | Wrong face on top, or speaker cut off | Tell Claude which layout to use for that clip (`full`, `cam` or `facecam`). |

@@ -8,11 +8,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config
-from .chunks import write_chunks
+from . import config, manifest
+from .chunks import CHUNK_FORMAT, LOOKAHEAD_SEC, LOW_CONF, write_chunks
 from .signals import chat_spikes, loud_moments
 from .sources import download_audio, source_info
-from .transcribe import clean_segments, transcribe
+from .transcribe import clean_segments, model_label, transcribe
 from .util import hms, log, run, slug
 
 
@@ -45,6 +45,16 @@ def prep_all(sources: list[str], opts: PrepOptions) -> list[dict]:
     return results
 
 
+def _settings(opts: PrepOptions) -> dict:
+    """The choices that shape a run's transcript and chunks; recorded in the manifest and compared on re-runs."""
+    s = {"lang": opts.lang, "chunk_min": opts.chunk_min, "chunk_format": CHUNK_FORMAT}
+    try:
+        s["whisper_model"] = model_label(opts.lang)
+    except RuntimeError:  # no model configured: the transcription step reports that itself
+        pass
+    return s
+
+
 def run_dir(info: dict) -> Path:
     return config.RUNS / f"{dt.date.today()}-{slug(info['streamer'], 24)}-{slug(str(info['id']), 16)}"
 
@@ -57,10 +67,14 @@ def prep_one(src: str, opts: PrepOptions) -> dict:
     rd = run_dir(info)
     (rd / "chunks").mkdir(parents=True, exist_ok=True)
     (rd / "picks").mkdir(exist_ok=True)
-    (rd / "stream.json").write_text(json.dumps(info, indent=2))
-    if (rd / "transcript.json").exists() and not opts.force:
+    if "prep" in manifest.read(rd) and not opts.force:
         log(f"[{who}] already prepped -> {rd}")
-        return {"run": str(rd), "streamer": who, "cached": True}
+        stale = manifest.stale_reason(manifest.read(rd), _settings(opts))
+        if stale:
+            log(f"[{who}] note: this run was prepped with other settings ({stale}). Add --force to redo it "
+                f"(chunk numbers can change, so picks/ would need redoing too).")
+        return {"run": str(rd), "streamer": who, "cached": True, **({"stale": stale} if stale else {})}
+    manifest.update(rd, source=info)
 
     try:
         return _audio_to_chunks(rd, info, opts, t0)
@@ -96,11 +110,16 @@ def _audio_to_chunks(rd: Path, info: dict, opts: PrepOptions, t0: float) -> dict
     segs = clean_segments(raw)
     (rd / "transcript.json").write_text(json.dumps(segs))
     (rd / "signals.json").write_text(json.dumps({"loud": loud, "chat": chat}, indent=1))
-    n = write_chunks(rd, info, segs, loud, chat, opts.chunk_min * 60, opts.context)
+    index = write_chunks(rd, info, segs, loud, chat, opts.chunk_min * 60, opts.context)
+    n = len(index)
+    low = sum(1 for s in segs if s.get("conf") is not None and s["conf"] < LOW_CONF)
     timing = {"prep_started": t0, "download_sec": round(t_dl - t0), "analyse_sec": round(time.time() - t_dl),
               "chunks": n, "segments": len(segs), "junk_lines_removed": len(raw) - len(segs),
               "loud_events": len(loud), "chat_spikes": len(chat)}
-    (rd / "timing.json").write_text(json.dumps(timing, indent=1))
+    prep = {**_settings(opts), "whisper_cli": manifest.whisper_cli_version(), "lookahead_sec": LOOKAHEAD_SEC,
+            "low_conf": LOW_CONF, "low_conf_segments": low, "tool_version": manifest.tool_version(),
+            "finished": manifest.now()}
+    manifest.update(rd, prep=prep, chunks=index, timing=timing)
     log(f"[{who}] ready: {n} chunks, {len(loud)} loud moments, {len(chat)} chat spikes "
         f"({round(time.time() - t0)}s) -> {rd}")
     return {"run": str(rd), "streamer": who, "chunks": n}

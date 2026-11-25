@@ -10,26 +10,31 @@ recording, vlog. Find the moments people actually SHARE, score them, and be hars
 # The Example Show: Episode 212 with Dr. Jane Doe
 Chunk 4/11  (00:36:00 to 00:48:00)
 Context: science podcast, guest is a sleep researcher
-Markers: LOUD(+dB over normal) = speaker got loud. CHAT xN = chat moving N times faster than normal.
+Markers: LOUD(+dB over normal) = speaker got loud. CHAT xN = chat moving N times faster than normal. LOW-CONF = ...
 
-(end of the previous chunk, for context. Use it only for a moment that continues into this chunk)
-[00:35:20] ...and that's when the board called me in.
-[00:35:48] I thought it was about the budget.
-(this chunk starts here)
 [00:36:02] So I got fired the same morning the app hit number one.   <<LOUD(+11dB)>>
 [00:36:06] My manager walks in, I'm refreshing the charts...
+   ... (the rest of the 12 minutes) ...
+[00:47:41] And that's the moment I knew the company was done.
+(end of this chunk. The lines below are the start of the next chunk, for context only: a moment that started above may run into them, but never start a moment below)
+[00:48:02] Nobody said a word for a full minute.
+[00:48:30] Then the CFO stood up and left.
 ```
 
 - `[HH:MM:SS]` is where that line starts in the ORIGINAL video. Always use these timestamps.
-- From chunk 2 on, the chunk opens with the last minute of the previous chunk, between the two
-  `(...)` lines. That part was already read last time. Use it only when a moment **starts there and
-  continues into this chunk** (so it was cut off before). Don't pick a moment that lies entirely inside it.
+- **A moment belongs to the chunk where it STARTS.** Every chunk except the last ends with about 90
+  seconds of the next chunk, below the `(end of this chunk...)` line. It is only there so you can see how a
+  moment that starts near the end finishes. Never start a moment in that part: the next chunk reads it as
+  its own. `status` reports a pick whose `start` is outside its chunk, and render skips it.
 - Silence and music markers (`[BLANK_AUDIO]`, `[MUSIC]`, `♪♪`) are already removed. Reaction tags like
   `[laughs]`, `(screaming)` or `(applause)` are kept: they're good signals.
 - `Context:` (if present) is what the user told you about the video and audience. Use it to judge what matters.
 - `<<LOUD(+NdB)>>`: the speaker got N dB louder than the surrounding 3 minutes (yelling, laughing, arguing).
 - `<<CHAT xN>>`: live chat (YouTube replays) moved N times faster than normal. Chat reacts a few seconds
   late, so the moment is usually just BEFORE the marker.
+- `<<LOW-CONF>>`: Whisper was unsure of the words on that line (song lyrics, crosstalk, game or music noise
+  over the voice). The text may be wrong or invented. Never pick a moment because of such a line, and be
+  careful with a moment that mostly consists of them. A single low-confidence word inside good speech is fine.
 
 Signals help, they don't decide. A loud line with nothing interesting said is not a clip. A great line with
 no marker can be. Calm formats (podcasts, tutorials) have few markers: judge the words.
@@ -77,10 +82,9 @@ Most chunks have 0-2 real candidates. Many have none. That's normal.
   seconds earlier.
 - `end` = the timestamp of the first line AFTER the payoff (the punchline, the point lands, the reaction
   peaks). Don't trail off. Render snaps both ends to sentence edges.
-- A moment that runs past the end of this chunk is fine: use the last timestamp you can see for `end`, or
-  extend by the time the line obviously needs. The next chunk starts with this minute again, so you'll see
-  the rest of it there. Picking the same moment twice is harmless (render keeps the higher score), but
-  avoid it.
+- A moment that starts in this chunk may end in the lookahead below it: use the real end there. If it still
+  isn't finished at the last line you can see, it's too long to be a clip: pick a shorter part or drop it.
+  Don't pick the same moment again in the next chunk.
 - One broken entry (say, a missing `end`) is skipped on its own; the other moments in the file still count.
 - Timestamps are strings `"HH:MM:SS"` (plain seconds as numbers also work). `end` must be after `start`.
 

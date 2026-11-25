@@ -46,14 +46,24 @@ def _whisper_json(wav: Path, out_base: Path, lang: str, extra: list[str]) -> dic
     return json.loads(Path(f"{out_base}.json").read_text())
 
 
+def model_label(lang: str) -> str:
+    """The model family the next transcription uses, e.g. 'medium.en' (from ggml-medium.en.bin)."""
+    return Path(whisper_model(lang)).name.removeprefix("ggml-").removesuffix(".bin")
+
+
 def transcribe(wav: Path, out_base: Path, lang: str = "en") -> list[dict]:
-    """[{start, end, text}] in seconds."""
-    data = _whisper_json(wav, out_base, lang, [])
+    """[{start, end, text, conf}] in seconds. conf (0-1) is Whisper's average confidence in the line's words."""
+    data = _whisper_json(wav, out_base, lang, ["-ojf"])
     segs = []
     for s in data.get("transcription", []):
         txt = s.get("text", "").strip()
-        if txt:
-            segs.append({"start": s["offsets"]["from"] / 1000, "end": s["offsets"]["to"] / 1000, "text": txt})
+        if not txt:
+            continue
+        seg = {"start": s["offsets"]["from"] / 1000, "end": s["offsets"]["to"] / 1000, "text": txt}
+        p = [t["p"] for t in s.get("tokens", []) if not t["text"].startswith("[_") and "p" in t]
+        if p:
+            seg["conf"] = round(sum(p) / len(p), 2)
+        segs.append(seg)
     return segs
 
 
@@ -66,6 +76,8 @@ def clean_segments(segs: list[dict]) -> list[dict]:
         key = re.sub(r"[^\w]", "", s["text"].lower())
         if out and key and key == re.sub(r"[^\w]", "", out[-1]["text"].lower()):
             out[-1]["end"] = s["end"]
+            if "conf" in s and "conf" in out[-1]:
+                out[-1]["conf"] = min(out[-1]["conf"], s["conf"])
             continue
         out.append(s)
     return out
