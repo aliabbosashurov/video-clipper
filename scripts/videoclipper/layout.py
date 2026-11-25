@@ -5,6 +5,7 @@ To add a layout: return a new "mode" from detect(), handle it in plan(), and add
 """
 from __future__ import annotations
 
+import math
 import os
 import statistics
 from dataclasses import dataclass
@@ -12,6 +13,9 @@ from pathlib import Path
 
 from .config import CFG, Quality
 from .util import log
+
+TOP_H = 672  # facecam panel without a box: the face panel's height (the game gets the rest)
+SAMPLE_EVERY = 1.5  # seconds between the frames detect() looks at
 
 
 @dataclass
@@ -22,29 +26,87 @@ class Plan:
     cap_y: int   # y of the caption line (captions.py clamps it into the safe zone)
 
 
-def detect(video: Path, W: int, H: int) -> dict:
-    """{"mode": "facecam", "box": [x, y, w, h], "face": [...]} / {"mode": "cam", "face": [...]} / {"mode": "full"}.
-    Detection runs on frames scaled to at most 1920 wide (fast, same thresholds for 1440p/4K
-    sources); the box and face come back in source pixels."""
+def detect(video: Path, W: int, H: int, start: float = 0.0, dur: float | None = None) -> dict:
+    """What is on screen during video[start : start+dur], in source pixels:
+    {"mode": "facecam" | "cam" | "full", "face": [x, y, w, h], "track": [[t, cx, cy, w, h], ...], "box": [x, y, w, h]}.
+    face is the person's median face and track follows it over the clip (t counts from `start`); box only
+    comes with a facecam that has a rectangular webcam box. No "face" when nobody steady is on screen.
+    Detection runs on frames scaled to at most 1920 wide (fast, same thresholds for 1440p/4K sources)."""
     s = min(1.0, 1920 / W)
-    res = _detect(video, int(W * s), int(H * s), s)
+    res = _detect(video, int(W * s), int(H * s), s, start, dur)
     if "face" in res:
         res["face"] = [v / s for v in res["face"]]
+        res["track"] = [[t, *(v / s for v in rest)] for t, *rest in res["track"]]
     if "box" in res:
         L, T, cw, ch = (int(v / s) for v in res["box"])
         res["box"] = [L, T, min(cw, W - L), min(ch, H - T)]
     return res
 
 
-def _detect(video: Path, W: int, H: int, scale: float = 1.0) -> dict:
-    """Sample frames, find a face that sits in the same spot (anywhere in the frame).
-    facecam: the face is inside a box with static edges AND the rest of the frame moves (gameplay,
-    screen share) -> overlay. cam: a camera shot of a person (podcast, interview, vlog). full: no steady face."""
+def _link(frames: list[list[tuple]]) -> list[list[tuple]]:
+    """Faces found per frame -> tracks of (frame, cx, cy, w, h): the same face in neighbouring frames."""
+    tracks: list[list[tuple]] = []
+    for i, faces in enumerate(frames):
+        taken = set()
+        for x, y, w, h in sorted(faces, key=lambda f: -f[2]):
+            cx, cy = x + w / 2, y + h / 2
+            best, best_d = None, 1e9
+            for k, tr in enumerate(tracks):
+                _, px, py, pw, _ = tr[-1]
+                d = math.hypot(cx - px, cy - py)
+                if k not in taken and d < 1.5 * max(w, pw) and 0.5 <= w / pw <= 2 and d < best_d:
+                    best, best_d = k, d
+            if best is None:
+                tracks.append([(i, cx, cy, w, h)])
+                best = len(tracks) - 1
+            else:
+                tracks[best].append((i, cx, cy, w, h))
+            taken.add(best)
+    return tracks
+
+
+def _person(tracks: list[list[tuple]], nframes: int, W: int) -> list[tuple] | None:
+    """The track that is the person: seen in most frames and the biggest. A game's player cards and portraits
+    are small and pixel-still; a streamer is bigger and always moving a little."""
+    best, best_score = None, 0.0
+    for tr in tracks:
+        w = statistics.median(o[3] for o in tr)
+        cover = len(tr) / nframes
+        if len(tr) < 3 or cover < 0.4 or w < W * 0.02:
+            continue
+        if w < W * 0.08 and max(statistics.pstdev(o[k] for o in tr) for k in (1, 2, 3)) < 0.03 * w:
+            continue  # frozen
+        if cover * w > best_score:
+            best, best_score = tr, cover * w
+    return best
+
+
+def _smooth(vals: list[float]) -> list[float]:
+    """Median of 3, then mean of 5: a face bobbing at talking speed shouldn't move the crop."""
+    n = len(vals)
+    med = [statistics.median(vals[max(0, i - 1):i + 2]) for i in range(n)]
+    return [statistics.fmean(med[max(0, i - 2):i + 3]) for i in range(n)]
+
+
+def _track(person: list[tuple], times: list[float]) -> list[list[float]]:
+    """[t, cx, cy, w, h] at every sample time, smoothed; frames where the face was lost are filled in."""
+    import numpy as np
+    idx = [o[0] for o in person]
+    cols = [_smooth([float(v) for v in np.interp(range(len(times)), idx, [o[k] for o in person])]) for k in (1, 2, 3, 4)]
+    return [[times[i], *(c[i] for c in cols)] for i in range(len(times))]
+
+
+def _detect(video: Path, W: int, H: int, scale: float, start: float, dur: float | None) -> dict:
+    """Sample frames across the clip and find the person. facecam: the face is inside a box with static edges AND
+    the rest of the frame moves (gameplay, screen share) -> overlay; or a small face low in the frame with no
+    box at all (a green-screen cutout of the streamer) -> followed with a crop. cam: a camera shot of a person
+    (podcast, interview, vlog). full: no steady face."""
     os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
     import cv2
     import numpy as np
     cap = cv2.VideoCapture(str(video))
-    nfr = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 300
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    total = dur if dur else (int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 300) / fps
     det = None
     ym = CFG.get("yunet_model")
     if ym and Path(ym).exists():
@@ -52,17 +114,21 @@ def _detect(video: Path, W: int, H: int, scale: float = 1.0) -> dict:
     haar = None
     if det is None and hasattr(cv2, "CascadeClassifier"):
         haar = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    faces, grads, smalls = [], [], []
-    for i in range(12):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(nfr * (i + 0.5) / 12))
+    n = int(min(30, max(12, total / SAMPLE_EVERY)))
+    keep_every = math.ceil(n / 12)  # edge and motion maps are big: keep about 12 of them
+    frames, times, grads, smalls = [], [], [], []
+    for i in range(n):
+        t = total * (i + 0.5) / n
+        cap.set(cv2.CAP_PROP_POS_MSEC, (start + t) * 1000)
         ok, fr = cap.read()
         if not ok:
             continue
         if scale < 1:
             fr = cv2.resize(fr, (W, H), interpolation=cv2.INTER_AREA)
         g = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY)
-        smalls.append(cv2.resize(g, (160, 90), interpolation=cv2.INTER_AREA).astype(np.float32))
-        grads.append((np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0)), np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1))))
+        if i % keep_every == 0:
+            smalls.append(cv2.resize(g, (160, 90), interpolation=cv2.INTER_AREA).astype(np.float32))
+            grads.append((np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0)), np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1))))
         found = []
         if det is not None:
             _, res = det.detect(fr)
@@ -70,26 +136,21 @@ def _detect(video: Path, W: int, H: int, scale: float = 1.0) -> dict:
                 found = [tuple(map(float, r[:4])) for r in res]
         elif haar is not None:
             found = [tuple(map(float, f)) for f in haar.detectMultiScale(g, 1.1, 6, minSize=(40, 40))]
-        faces.append(found)
+        frames.append(found)
+        times.append(t)
     cap.release()
-    flat = [f for fs in faces for f in fs]
-    if not flat:
+    person = _person(_link(frames), len(frames), W) if frames else None
+    if person is None:
         return {"mode": "full"}
-    # cluster by centre; keep the most persistent cluster
-    best, best_n = None, 0
-    for f in flat:
-        cx, cy = f[0] + f[2] / 2, f[1] + f[3] / 2
-        members = [g for g in flat if abs(g[0] + g[2] / 2 - cx) < W * 0.06 and abs(g[1] + g[3] / 2 - cy) < H * 0.08]
-        if len(members) > best_n:
-            best, best_n = members, len(members)
-    if best_n < max(3, len(faces) * 0.4):
-        return {"mode": "full"}
-    fx = statistics.median(m[0] for m in best); fy = statistics.median(m[1] for m in best)
-    fw = statistics.median(m[2] for m in best); fh = statistics.median(m[3] for m in best)
+    fx = statistics.median(o[1] - o[3] / 2 for o in person); fy = statistics.median(o[2] - o[4] / 2 for o in person)
+    fw = statistics.median(o[3] for o in person); fh = statistics.median(o[4] for o in person)
     face = [fx, fy, fw, fh]
-    shot = {"mode": "cam", "face": face} if fw > W * 0.05 else {"mode": "full", "face": face}
+    track = _track(person, times)
+    shot = {"mode": "cam", "face": face, "track": track} if fw > W * 0.05 else {"mode": "full", "face": face, "track": track}
     if fw > W * 0.2:  # face fills the screen: it's a camera view, not an overlay
         return shot
+    # a small face low in the frame is a streamer cutout on top of the screen content, box or not
+    cutout = {"mode": "facecam", "face": face, "track": track} if fw > W * 0.04 and fy + fh / 2 > H * 0.55 else shot
 
     gx = np.median(np.stack([g[0] for g in grads]), axis=0)  # vertical edges, static over time
     gy = np.median(np.stack([g[1] for g in grads]), axis=0)  # horizontal edges
@@ -120,7 +181,7 @@ def _detect(video: Path, W: int, H: int, scale: float = 1.0) -> dict:
     R = scan(colp, fx + fw * 1.15, fx + fw * 4.0)
     # an overlay in a corner shows 2 edges (the other two are the frame border); none means a camera shot
     if sum(e is not None for e in (L, R, T, B)) < 2:
-        return shot
+        return cutout
     # fallbacks for missing edges: typical facecam framing around the face; a guess that lands near the
     # frame border means the cam sits flush in that corner, so use the border itself
     cw_guess = fw * 3.4
@@ -139,36 +200,56 @@ def _detect(video: Path, W: int, H: int, scale: float = 1.0) -> dict:
         B = H if H - B < fh * 0.8 else B
     L, R = max(0, L + 2), min(W, R - 2)
     T, B = max(0, T + 2), min(H, B - 2)
-    if R - L < fw * 1.4 or B - T < fh * 1.4 or (R - L) * (B - T) > W * H * 0.35:
-        return shot
+    # a webcam box is landscape: a tall one is the scan running past the real edge
+    if R - L < fw * 1.4 or B - T < fh * 1.4 or (R - L) * (B - T) > W * H * 0.35 or R - L < B - T:
+        return cutout
     # an overlay sits on top of moving content; a static background around the face means a real room
     mask = np.ones((90, 160), bool)
     mask[int(T * 90 / H):int(B * 90 / H) + 1, int(L * 160 / W):int(R * 160 / W) + 1] = False
     motion = [float(np.abs(p - q)[mask].mean()) for p, q in zip(smalls, smalls[1:])]
     if not motion or statistics.median(motion) < 2.0:
         return shot
-    return {"mode": "facecam", "box": [int(L), int(T), int(R - L), int(B - T)], "face": face}
+    return {"mode": "facecam", "box": [int(L), int(T), int(R - L), int(B - T)], "face": face, "track": track}
 
 
 def choose(fc: dict, forced: str | None, n: int) -> dict:
-    """Apply a forced layout (per pick or --layout) to what detect() found. "gameplay" = old name for "full"."""
-    forced = {"gameplay": "full"}.get(forced, forced)
-    if forced == "full" or (forced == "cam" and "face" not in fc):
+    """Apply a forced layout (per pick or --layout) to what detect() found."""
+    if forced == "full" or (forced in ("cam", "facecam") and "face" not in fc):
         return {"mode": "full"}
     if forced == "cam":
-        return {"mode": "cam", "face": fc["face"]}
+        return {**{k: v for k, v in fc.items() if k != "box"}, "mode": "cam"}
     if forced == "facecam" and fc["mode"] != "facecam":
-        log(f"  clip {n}: no facecam box found, using {fc['mode']}")
+        log(f"  clip {n}: no webcam box found, following the face instead")
+        return {**fc, "mode": "facecam"}
     return fc
+
+
+def _follow(keys: list[tuple[float, float]]) -> str:
+    """ffmpeg expression in t (seconds) that glides through (t, value) keypoints; a constant when it barely moves."""
+    vals = [v for _, v in keys]
+    if max(vals) - min(vals) < 2:
+        return f"{statistics.fmean(vals):.0f}"
+    e = f"{vals[-1]:.1f}"
+    for (t0, v0), (t1, v1) in reversed(list(zip(keys, keys[1:]))):
+        e = f"if(lt(t,{t1:.2f}),{v0:.1f}+({v1 - v0:.1f})*(t-{t0:.2f})/{t1 - t0:.2f},{e})"
+    return f"if(lt(t,{keys[0][0]:.2f}),{vals[0]:.1f},{e})"
+
+
+def _pan(fc: dict, cw: float, ch: float, W: int, H: int, face_at: float) -> tuple[str, str]:
+    """x and y expressions of a cw x ch crop that keeps the face centred sideways and face_at (0..1) down the crop."""
+    track = fc.get("track") or [[0.0, fc["face"][0] + fc["face"][2] / 2, fc["face"][1] + fc["face"][3] / 2, 0, 0]]
+    xs = [(t, min(max(0, cx - cw / 2), W - cw)) for t, cx, *_ in track]
+    ys = [(t, min(max(0, cy - ch * face_at), H - ch)) for t, _, cy, *_ in track]
+    return f"'{_follow(xs)}'", f"'{_follow(ys)}'"
 
 
 def plan(fc: dict, W: int, H: int, q: Quality) -> Plan:
     """The ffmpeg framing for a detected (or forced) layout."""
     sf = ":flags=lanczos"  # sharper than the default bicubic when enlarging a small facecam
     sharp = ",unsharp=5:5:0.6:5:5:0" if q.sharpen else ""
-    if fc["mode"] == "facecam":
+    if fc["mode"] == "facecam" and fc.get("box"):
         L, T, cw, ch = fc["box"]
-        top_h = int(min(960, max(560, 1080 * ch / cw)))
+        top_h = int(min(768, max(560, 1080 * ch / cw)))
         top_h -= top_h % 2
         bot_h = 1920 - top_h
         gw, gh = H * 1080 / bot_h, H
@@ -180,16 +261,50 @@ def plan(fc: dict, W: int, H: int, q: Quality) -> Plan:
             gx = L + cw
         elif L < gx + gw < L + cw and L - gw >= 0:
             gx = L - gw
+        # box taller than the panel: keep the face, not the middle of the box, in view
+        fy = fc["face"][1] + fc["face"][3] / 2 - T
+        oy = min(max(0, (fy - ch * 0.45) * 1080 / cw), max(0, 1080 * ch / cw - top_h))
         vf = (f"[0:v]fps=30,split[a][b];"
               f"[a]crop={cw}:{ch}:{L}:{T},scale=1080:{top_h}:force_original_aspect_ratio=increase{sf},"
-              f"crop=1080:{top_h}{sharp}[top];"
+              f"crop=1080:{top_h}:0:{int(oy)}{sharp}[top];"
               f"[b]crop={int(gw)}:{int(gh)}:{int(gx)}:{int(gy)},scale=1080:{bot_h}{sf}[bot];[top][bot]vstack[base]")
         return Plan(vf, top_h, top_h + int(bot_h * 0.58))
-    if fc["mode"] == "cam":  # 9:16 crop centred on the main face
+    if fc["mode"] == "facecam":  # no webcam box: a crop that follows the face on top, the screen below
         fx, fy, fw, fh = fc["face"]
-        cw = min(W, H * 9 / 16)
-        cx = min(max(0, fx + fw / 2 - cw / 2), W - cw)
-        return Plan(f"[0:v]fps=30,crop={int(cw)}:{H}:{int(cx)}:0,scale=1080:1920{sf}{sharp}[base]", 300, 1380)
+        widths = sorted(o[3] for o in fc["track"]) if fc.get("track") else [fw]
+        cw = min(W * 0.7, max(360, widths[int(len(widths) * 0.8)] * 4.6))  # sized for when he leans in
+        ch = cw * TOP_H / 1080
+        if ch > H * 0.7:
+            ch, cw = H * 0.7, H * 0.7 * 1080 / TOP_H
+        cw, ch = int(cw) // 2 * 2, int(ch) // 2 * 2
+        x, y = _pan(fc, cw, ch, W, H, 0.46)
+        bot_h = 1920 - TOP_H
+        gw, gh = H * 1080 / bot_h, H
+        if gw > W:
+            gw, gh = W, W * bot_h / 1080
+        gx = (W - gw) / 2
+        px0, px1 = fx + fw / 2 - fw * 0.8, fx + fw / 2 + fw * 0.8  # the person's body, so the screen crop skips it
+        if px0 < gx + gw and px1 > gx:
+            if px1 + gw <= W:
+                gx = px1
+            elif px0 - gw >= 0:
+                gx = px0 - gw
+        gy = (H - gh) / 2
+        vf = (f"[0:v]fps=30,split[a][b];"
+              f"[a]crop={cw}:{ch}:{x}:{y},scale=1080:{TOP_H}{sf}{sharp}[top];"
+              f"[b]crop={int(gw)}:{int(gh)}:{int(gx)}:{int(gy)},scale=1080:{bot_h}{sf}[bot];[top][bot]vstack[base]")
+        return Plan(vf, TOP_H, TOP_H + int(bot_h * 0.58))
+    if fc["mode"] == "cam":  # 9:16 crop that follows the main face, zoomed in when it sits too low or high
+        fx, fy, fw, fh = fc["face"]
+        cy, ch, a = fy + fh / 2, H, 0.42
+        if cy - a * ch < 0:
+            ch = max(H * 0.62, cy / a)
+        if cy + (1 - a) * ch > H:
+            ch = max(H * 0.62, (H - cy) / (1 - a))
+        ch = int(min(ch, H)) // 2 * 2
+        cw = min(W, int(ch * 9 / 16) // 2 * 2)
+        x, y = _pan(fc, cw, ch, W, H, a)
+        return Plan(f"[0:v]fps=30,crop={cw}:{ch}:{x}:{y},scale=1080:1920{sf}{sharp}[base]", 300, 1380)
     # full frame in the middle over a blurred fill
     return Plan("[0:v]fps=30,split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
                 f"boxblur=30:3,eq=brightness=-0.15[bg];[b]scale=1080:-2{sf}[fg];[bg][fg]overlay=0:(H-h)/2[base]",

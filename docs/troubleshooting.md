@@ -38,7 +38,7 @@ tells you in plain words.
 | A line in a chunk is marked `LOW-CONF` | Whisper was unsure of those words (lyrics, crosstalk, game or music noise). Claude is told not to pick a moment because of such lines. |
 | The transcript is gibberish | The language is wrong. Tell Claude the video's language, or ask it to detect it (`--lang auto --force`). |
 | A clip starts with a black screen for a few seconds, and its captions run ahead of the speech | Fixed in 1.0.3: render now checks that the picture starts on the first frame and cuts the caption audio at the exact time. Clips made with an older version can have both problems (mostly at `high` / `max` quality): ask Claude to render them again. |
-| Wrong face on top, or speaker cut off | Tell Claude which layout to use for that clip (`full`, `cam` or `facecam`). |
+| Wrong face on top, or speaker cut off | Tell Claude which layout to use for that clip (`full`, `cam` or `facecam`). The streamer is the biggest face that moves; a game with a big moving character face can still fool it. |
 | A moment Claude chose is missing from the clips | One of its pick entries was broken (for example no `end`). Render now skips only that entry and logs `skipped chunk_NN.json entry N`; ask Claude to fix it and render again. |
 | Fewer clips than asked for | Not enough moments passed the quality bar. Ask for more anyway (`--min-score 6`), or the video may not have more good moments. |
 | The streamer's camera looks blurry | The webcam box is small in the original and gets enlarged. Ask for `high quality` (or `max` for 4K videos) and re-render. |

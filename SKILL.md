@@ -89,15 +89,16 @@ Render makes sure every clip has picture from its first frame (it re-downloads w
 a section's first keyframe comes late). If it logs `starting N s later than picked`, tell the user.
 
 Layouts (auto-detected per clip, from faces found across the clip):
-- `facecam`: a small face inside a box with fixed edges (any position) over moving content (streams,
-  screen shares) -> cam box on top, the rest of the frame below.
+- `facecam`: a streamer over the screen content -> the streamer on top, the rest of the frame below. Either
+  a face inside a box with fixed edges (any position), or, with no box at all (a green-screen cutout of the
+  streamer in a lower corner), a crop that follows the face.
 - `cam`: a person on camera with a static background (podcast, interview, vlog, talking head) -> 9:16
-  crop centred on the main face.
+  crop that follows the main face, zoomed in so the face sits about 40 % down the frame.
 - `full`: no steady face (screen recordings, gameplay with no cam, landscapes) -> whole frame centred over
   a blurred copy.
 
 Force one for the whole run with `--layout cam|facecam|full`, e.g. `--layout full` for tutorials where
-the screen matters more than the face. If fewer clips came out than asked because scores were low, say so
+the screen matters more than the face. A forced `facecam` on a clip with no webcam box follows the face. If fewer clips came out than asked because scores were low, say so
 and offer `--min-score 6` rather than quietly lowering the bar. Pass the same `--cookies` if prep needed
 them (they're remembered in `manifest.json`).
 

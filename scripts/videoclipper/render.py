@@ -109,7 +109,7 @@ def _render_clip(rd: Path, info: dict, c: dict, n: int, cookies: str | None, for
         ss = v0
     dur = min(c["_e"] - a - ss, sdur - ss)  # ends where the moment ends, even if the start moved
 
-    fc = layout.choose(layout.detect(src, W, H), c.get("layout") or forced_layout, n)
+    fc = layout.choose(layout.detect(src, W, H, ss, dur), c.get("layout") or forced_layout, n)
     words = clip_words(src, ss, dur, work, info.get("lang") or "en")
     frame = layout.plan(fc, W, H, q)
     lst = caption_frames(words, c.get("hook") or c.get("title"), frame.seam, frame.cap_y, dur, work / "cap")

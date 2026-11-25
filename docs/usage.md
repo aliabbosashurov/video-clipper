@@ -37,8 +37,8 @@ Each clip is framed automatically, based on what's on screen:
 
 | layout | used for | looks like |
 |---|---|---|
-| **facecam** | streams and screen shares with a webcam box (anywhere on screen) | webcam on top, the game or screen below |
-| **cam** | podcasts, interviews, vlogs, talking heads | vertical crop centred on the speaker |
+| **facecam** | streams and screen shares: a webcam box (anywhere on screen) or a cutout of the streamer over the game | the streamer on top (the crop follows the face), the game or screen below |
+| **cam** | podcasts, interviews, vlogs, talking heads | vertical crop that follows the speaker, face about 40 % down |
 | **full** | screen recordings, gameplay without a webcam, travel footage | the whole frame in the middle, over a blurred background |
 
 If a clip is framed wrong, tell Claude which layout to use for it.

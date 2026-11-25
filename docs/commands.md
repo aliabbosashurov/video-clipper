@@ -52,8 +52,8 @@ you want in plain words. In the Terminal, run them as `vclip <command> [options]
 | Value | Best for | Looks like |
 |---|---|---|
 | `auto` | anything | Picks one of the three below by itself |
-| `facecam` | streams with a webcam box | Webcam on top, game or screen below |
-| `cam` | podcasts, interviews, vlogs | Vertical crop centred on the speaker |
+| `facecam` | streams, with a webcam box or a cutout of the streamer | Streamer on top (a crop that follows the face), game or screen below |
+| `cam` | podcasts, interviews, vlogs | Vertical crop that follows the speaker |
 | `full` | screen recordings, tutorials, no webcam | Whole frame in the middle over a blurred background |
 
 ### `--quality` values

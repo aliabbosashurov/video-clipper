@@ -51,8 +51,8 @@ Claude:  Done. 3 clips from the 1 h 42 min episode:
 
 For every video, 3 clips (or as many as you ask for), each with:
 
-- **Vertical 9:16 video** (1080×1920), framed automatically: facecam on top for streams (found anywhere on
-  screen, even flush in a corner, without the overlay graphics around it), a crop on the speaker for
+- **Vertical 9:16 video** (1080×1920), framed automatically: the streamer on top for streams (a webcam box found
+  anywhere on screen, or a green-screen cutout followed by a crop), a crop that follows the speaker for
   podcasts, or the full frame for screen recordings
 - **A hook title** on screen that makes people stop scrolling
 - **Word-by-word captions** that highlight each word as it's spoken, placed where the TikTok, Reels and
