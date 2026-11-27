@@ -14,7 +14,7 @@ from pathlib import Path
 from . import layout, manifest
 from .captions import caption_frames
 from .config import QUALITY, Quality
-from .media import probe_video, video_start
+from .media import probe_video, shot_cuts, video_start
 from .picks import select
 from .post import post_text
 from .sources import fetch_section
@@ -108,6 +108,7 @@ def _render_clip(rd: Path, info: dict, c: dict, n: int, cookies: str | None, for
         log(f"  clip {n}: starting {v0 - ss:.1f}s later than picked, where the picture begins")
         ss = v0
     dur = min(c["_e"] - a - ss, sdur - ss)  # ends where the moment ends, even if the start moved
+    ss, dur = _avoid_shot_edges(src, ss, dur, sdur)
 
     fc = layout.choose(layout.detect(src, W, H, ss, dur), c.get("layout") or forced_layout, n)
     words = clip_words(src, ss, dur, work, info.get("lang") or "en")
@@ -124,6 +125,24 @@ def _render_clip(rd: Path, info: dict, c: dict, n: int, cookies: str | None, for
         if old.stem != out.stem and old.suffix in (".mp4", ".jpg", ".txt"):
             old.unlink(missing_ok=True)
     return out, fc["mode"]
+
+
+def _avoid_shot_edges(src: Path, ss: float, dur: float, sdur: float) -> tuple[float, float]:
+    """A pick that lands a frame or two before a hard cut in the source opens on one stray frame of the
+    previous shot (a flash), and one that ends just after a cut shows a single frame of the next shot.
+    Move the start to the first frame of the shot, and the end to the last frame of the shot."""
+    cuts = shot_cuts(src, max(0.0, ss - 0.3), min(sdur, ss + 0.8))
+    for t in cuts:
+        if ss - 0.2 <= t <= ss + 0.6:
+            dur -= t - ss
+            ss = t
+            break
+    end = ss + dur
+    for t in shot_cuts(src, max(0.0, end - 0.8), min(sdur, end + 0.3)):
+        if end - 0.6 <= t <= end + 0.2 and t - ss > 8:
+            end = t - 0.04
+            break
+    return ss, max(1.0, end - ss)
 
 
 def _section(info: dict, c: dict, n: int, work: Path, cookies: str | None, q: Quality) -> tuple[Path, float]:

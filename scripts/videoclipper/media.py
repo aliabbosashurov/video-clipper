@@ -32,3 +32,18 @@ def video_start(src: Path | str) -> float:
         return float(r.stdout.split()[0])
     except (IndexError, ValueError):
         return 0.0
+
+
+def shot_cuts(src: Path | str, start: float, end: float, thr: float = 0.3) -> list[float]:
+    """Times (in the file's own clock) of hard shot changes between `start` and `end`. Needs a decode pass over
+    just that window, so ask for a few seconds, not the whole file."""
+    r = run(["ffmpeg", "-hide_banner", "-nostats", "-ss", f"{max(0.0, start):.3f}", "-t", f"{end - start:.3f}",
+             "-i", str(src), "-an", "-vf", f"scale=320:-2,select='gt(scene,{thr})',showinfo", "-f", "null", "-"])
+    out = []
+    for line in r.stderr.splitlines():
+        if "pts_time:" in line:
+            try:
+                out.append(max(0.0, start) + float(line.split("pts_time:")[1].split()[0]))
+            except ValueError:
+                pass
+    return out

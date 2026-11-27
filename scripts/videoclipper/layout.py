@@ -264,7 +264,7 @@ def plan(fc: dict, W: int, H: int, q: Quality) -> Plan:
         # box taller than the panel: keep the face, not the middle of the box, in view
         fy = fc["face"][1] + fc["face"][3] / 2 - T
         oy = min(max(0, (fy - ch * 0.45) * 1080 / cw), max(0, 1080 * ch / cw - top_h))
-        vf = (f"[0:v]fps=30,split[a][b];"
+        vf = (f"[0:v]fps=30:start_time=0,split[a][b];"
               f"[a]crop={cw}:{ch}:{L}:{T},scale=1080:{top_h}:force_original_aspect_ratio=increase{sf},"
               f"crop=1080:{top_h}:0:{int(oy)}{sharp}[top];"
               f"[b]crop={int(gw)}:{int(gh)}:{int(gx)}:{int(gy)},scale=1080:{bot_h}{sf}[bot];[top][bot]vstack[base]")
@@ -290,7 +290,7 @@ def plan(fc: dict, W: int, H: int, q: Quality) -> Plan:
             elif px0 - gw >= 0:
                 gx = px0 - gw
         gy = (H - gh) / 2
-        vf = (f"[0:v]fps=30,split[a][b];"
+        vf = (f"[0:v]fps=30:start_time=0,split[a][b];"
               f"[a]crop={cw}:{ch}:{x}:{y},scale=1080:{TOP_H}{sf}{sharp}[top];"
               f"[b]crop={int(gw)}:{int(gh)}:{int(gx)}:{int(gy)},scale=1080:{bot_h}{sf}[bot];[top][bot]vstack[base]")
         return Plan(vf, TOP_H, TOP_H + int(bot_h * 0.58))
@@ -304,8 +304,8 @@ def plan(fc: dict, W: int, H: int, q: Quality) -> Plan:
         ch = int(min(ch, H)) // 2 * 2
         cw = min(W, int(ch * 9 / 16) // 2 * 2)
         x, y = _pan(fc, cw, ch, W, H, a)
-        return Plan(f"[0:v]fps=30,crop={cw}:{ch}:{x}:{y},scale=1080:1920{sf}{sharp}[base]", 300, 1380)
+        return Plan(f"[0:v]fps=30:start_time=0,crop={cw}:{ch}:{x}:{y},scale=1080:1920{sf}{sharp}[base]", 300, 1380)
     # full frame in the middle over a blurred fill
-    return Plan("[0:v]fps=30,split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+    return Plan("[0:v]fps=30:start_time=0,split[a][b];[a]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
                 f"boxblur=30:3,eq=brightness=-0.15[bg];[b]scale=1080:-2{sf}[fg];[bg][fg]overlay=0:(H-h)/2[base]",
                 560, 1420)
