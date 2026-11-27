@@ -9,7 +9,7 @@ from pathlib import Path
 
 import context  # noqa: F401
 from videoclipper import layout
-from videoclipper.captions import SAFE_MAX_Y, caption_frames
+from videoclipper.captions import HOOK_LINES, HOOK_SIZES, SAFE_MAX_Y, SAFE_TEXT_W, caption_frames, fit_hook
 from videoclipper.config import QUALITY
 
 FACE = [100.0, 500.0, 80.0, 110.0]
@@ -68,14 +68,75 @@ class Layout(unittest.TestCase):
 
 
 class Captions(unittest.TestCase):
-    def test_timeline_covers_the_clip_and_stays_in_the_safe_zone(self):
+    def build(self, hook="HE GOT FIRED", seam=960, cap_y=1600, dur=6.0):
         words = [{"t": w, "s": i * 0.4, "e": i * 0.4 + 0.35} for i, w in enumerate("so i got fired today wow".split())]
         out = Path(tempfile.mkdtemp())
-        lst = caption_frames(words, "HE GOT FIRED", 960, 1600, 6.0, out)
-        durations = [float(x) for x in re.findall(r"duration ([\d.]+)", lst.read_text())]
+        return caption_frames(words, hook, seam, cap_y, dur, out), out
+
+    def test_timeline_covers_the_clip_and_stays_in_the_safe_zone(self):
+        ov, out = self.build()
+        durations = [float(x) for x in re.findall(r"duration ([\d.]+)", ov.strips.read_text())]
         self.assertAlmostEqual(sum(durations), 6.0, places=1)
         self.assertGreater(len(list(out.glob("c*.png"))), 3)  # one image per highlighted word
         self.assertLess(SAFE_MAX_Y, 1600)  # a caption asked for at y=1600 is pulled up into the safe zone
+        from PIL import Image
+        with Image.open(out / "c0000.png") as im:
+            self.assertTrue(ov.strip_y < SAFE_MAX_Y < ov.strip_y + im.size[1])  # the strip is built around the safe line
+
+    def test_caption_strips_are_small_even_sized_bands_inside_the_frame(self):
+        from PIL import Image
+        for cap_y in (300, 1090, 1380, 1900):
+            ov, out = self.build(cap_y=cap_y)
+            with Image.open(out / "c0000.png") as im:
+                w, h = im.size
+            self.assertEqual(w, 1080)
+            self.assertTrue(120 < h < 400 and h % 2 == 0, h)
+            self.assertTrue(ov.strip_y % 2 == 0 and 0 <= ov.strip_y and ov.strip_y + h <= 1920)
+            with Image.open(out / "blank.png") as im:
+                self.assertEqual(im.size, (1080, h))  # same size, so the overlay never jumps
+
+    def test_the_hook_is_one_still_image_and_no_hook_means_none(self):
+        from PIL import Image
+        ov, out = self.build(seam=672)
+        self.assertEqual(ov.hook, out / "hook.png")
+        with Image.open(ov.hook) as im:
+            w, h = im.size
+        self.assertEqual(w, 1080)
+        self.assertTrue(ov.hook_y % 2 == 0 and h % 2 == 0 and ov.hook_y <= 672 < ov.hook_y + h)
+        self.assertIsNone(self.build(hook=None)[0].hook)
+
+
+class HookFit(unittest.TestCase):
+    def fit(self, text):
+        from PIL import Image, ImageDraw
+        draw = ImageDraw.Draw(Image.new("RGBA", (8, 8)))
+        fnt, lines = fit_hook(draw, text.upper(), SAFE_TEXT_W - 60)
+        return draw, fnt, lines
+
+    def test_a_short_hook_keeps_the_full_size(self):
+        _, fnt, lines = self.fit("He got fired the same day")
+        self.assertEqual(fnt.size, HOOK_SIZES[0])
+        self.assertLessEqual(len(lines), HOOK_LINES)
+
+    def test_a_long_hook_shrinks_to_fit_instead_of_losing_words(self):
+        text = ("Biggest boss fight ever she beats it after six hours of trying and chat loses it completely "
+                "tonight wow no way this really happened here")
+        draw, fnt, lines = self.fit(text)
+        self.assertLess(fnt.size, HOOK_SIZES[0])
+        self.assertEqual(" ".join(lines), text.upper())  # nothing was cut
+        self.assertLessEqual(len(lines), HOOK_LINES)
+        self.assertTrue(all(draw.textlength(l, font=fnt) <= SAFE_TEXT_W - 60 for l in lines))
+
+    def test_a_hook_too_long_for_any_size_ends_with_an_ellipsis_on_a_whole_word(self):
+        text = " ".join(["unbelievable"] * 40)
+        draw, fnt, lines = self.fit(text)
+        self.assertLessEqual(len(lines), HOOK_LINES)
+        self.assertTrue(lines[-1].endswith("…"))
+        self.assertTrue(all(draw.textlength(l, font=fnt) <= SAFE_TEXT_W - 60 for l in lines))
+
+    def test_one_word_wider_than_the_box_gets_a_smaller_font(self):
+        draw, fnt, lines = self.fit("Supercalifragilisticexpialidocious")
+        self.assertTrue(all(draw.textlength(l, font=fnt) <= SAFE_TEXT_W - 60 for l in lines))
 
 
 if __name__ == "__main__":

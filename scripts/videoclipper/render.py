@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import layout, manifest
-from .captions import caption_frames
+from .captions import Overlays, caption_frames
 from .config import QUALITY, Quality
 from .media import probe_video, shot_cuts, video_start
 from .picks import select
@@ -113,9 +113,9 @@ def _render_clip(rd: Path, info: dict, c: dict, n: int, cookies: str | None, for
     fc = layout.choose(layout.detect(src, W, H, ss, dur), c.get("layout") or forced_layout, n)
     words = clip_words(src, ss, dur, work, info.get("lang") or "en")
     frame = layout.plan(fc, W, H, q)
-    lst = caption_frames(words, c.get("hook") or c.get("title"), frame.seam, frame.cap_y, dur, work / "cap")
+    ov = caption_frames(words, c.get("hook") or c.get("title"), frame.seam, frame.cap_y, dur, work / "cap")
     out = clips / f"clip_{n:02d}_{slug(c.get('title') or c.get('hook'), 40, whole_words=True)}.mp4"
-    _encode(src, ss, dur, frame.filter, lst, q, out)
+    _encode(src, ss, dur, frame.filter, ov, q, out)
     # cover image for Shorts / TikTok / Reels (hook visible, first caption on screen); also used to check framing
     run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{min(1.5, dur / 3):.2f}", "-i", str(out),
          "-frames:v", "1", "-q:v", "2", str(out.with_suffix(".jpg"))])
@@ -165,13 +165,20 @@ def _section(info: dict, c: dict, n: int, work: Path, cookies: str | None, q: Qu
     return src, a
 
 
-def _encode(src: Path, ss: float, dur: float, vf: str, captions_list: Path, q: Quality, out: Path) -> None:
-    """Frame + captions + loudness-normalised audio -> the final mp4."""
-    r = run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{ss:.3f}", "-t", f"{dur:.3f}", "-i", str(src),
-             "-f", "concat", "-safe", "0", "-i", str(captions_list), "-filter_complex",
-             vf + ";[1:v]format=rgba[ov];[base][ov]overlay=0:0:eof_action=repeat:format=auto,format=yuv420p[v];"
-             "[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]",
-             "-map", "[v]", "-map", "[aout]", "-c:v", "libx264", "-preset", q.preset, "-crf", str(q.crf),
+def _encode(src: Path, ss: float, dur: float, vf: str, ov: Overlays, q: Quality, out: Path) -> None:
+    """Frame + hook + captions + loudness-normalised audio -> the final mp4."""
+    inputs = ["-f", "concat", "-safe", "0", "-i", str(ov.strips)]
+    graph = vf + ";"
+    last = "base"
+    if ov.hook:  # one still image, shown for the whole clip
+        inputs += ["-loop", "1", "-framerate", "30", "-i", str(ov.hook)]
+        graph += f"[2:v]format=rgba[hk];[base][hk]overlay=0:{ov.hook_y}:format=auto[hooked];"
+        last = "hooked"
+    graph += (f"[1:v]format=rgba[cap];[{last}][cap]overlay=0:{ov.strip_y}:eof_action=repeat:format=auto,format=yuv420p[v];"
+              "[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]")
+    r = run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{ss:.3f}", "-t", f"{dur:.3f}", "-i", str(src), *inputs,
+             "-filter_complex", graph, "-map", "[v]", "-map", "[aout]", "-t", f"{dur:.3f}",
+             "-c:v", "libx264", "-preset", q.preset, "-crf", str(q.crf),
              "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)])
     if r.returncode != 0:
         out.unlink(missing_ok=True)  # don't leave a broken, half-written mp4 that looks like a clip
